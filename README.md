@@ -69,7 +69,8 @@
   </ol>
 </details>
 
-
+# Important!
+Disable edge gesture (at least the left side) in windows settings before using EdgeGesture.
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
@@ -148,8 +149,11 @@ Plugins are hosted within `src_ui/plugin/PluginContainer.qml` (a `SwipeView` com
 **Workflow:**
 Since EdgeGesture scans and loads plugins at runtime upon startup, you can develop and test plugins without a full Qt Creator environment or the official SDK (though I haven't tested it).
 
+#### Not developing plugins for PluginContainer
+Use `src_ui/plugin/PluginContainer.qml` as a template to develop plugins. The plugin will be loaded at runtime and recognized as a new action.
 
-
+#### Developing plugins for PluginContainer
+Use `src_ui/plugin/PluginContainer.qml` as a template to develop plugins. The plugin will be loaded at runtime and displayed in the PluginContainer.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
