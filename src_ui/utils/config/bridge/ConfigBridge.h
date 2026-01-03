@@ -98,6 +98,7 @@ private:
   bool m_engineEnabled;
   int m_splitMode;
   QStringList m_enabledPlugins;
+  bool m_loading;
 };
 
 #endif // CONFIGBRIDGE_H

@@ -13,6 +13,7 @@ FluScrollablePage {
     property int splitMode: ConfigBridge.splitMode
 
     property var actionList: []
+    property int reloadCount: 0
 
     function refreshActionList() {
         var names = ConfigBridge.actionRegistry.getActionNames();
@@ -23,7 +24,9 @@ FluScrollablePage {
     Connections {
         target: ConfigBridge
         function onSettingsChanged() {
+            refreshActionList();
             splitMode = ConfigBridge.splitMode;
+            reloadCount++;
         }
     }
 
@@ -134,6 +137,7 @@ FluScrollablePage {
 
                         currentIndex: {
                             // Dummy dependency to force update on settings changed or zone changed
+                            var rc = reloadCount;
                             var mode = splitMode;
                             var side = currentSide;
                             var zone = currentZone;
@@ -160,6 +164,7 @@ FluScrollablePage {
                         model: actionList
                         property string gestureKey: getFullKey("_diag_up")
                         currentIndex: {
+                            var rc = reloadCount;
                             var mode = splitMode;
                             var side = currentSide;
                             var zone = currentZone;
@@ -185,6 +190,7 @@ FluScrollablePage {
                         model: actionList
                         property string gestureKey: getFullKey("_diag_down")
                         currentIndex: {
+                            var rc = reloadCount;
                             var mode = splitMode;
                             var side = currentSide;
                             var zone = currentZone;
@@ -223,6 +229,7 @@ FluScrollablePage {
                         model: actionList
                         property string gestureKey: getFullKey("_long_right")
                         currentIndex: {
+                            var rc = reloadCount;
                             var mode = splitMode;
                             var side = currentSide;
                             var zone = currentZone;

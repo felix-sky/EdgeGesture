@@ -38,6 +38,13 @@ FluScrollablePage {
         }
     }
 
+    Connections {
+        target: ConfigBridge
+        function onSettingsChanged() {
+            refreshActions();
+        }
+    }
+
     ColumnLayout {
         width: parent.width
         spacing: 20

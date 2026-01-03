@@ -5,6 +5,7 @@
 #include "../services/SettingsManager.h"
 #include "../system/EngineControl.h"
 #include "../system/SystemEventListener.h"
+#include "../system/WindowsUtils.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -12,7 +13,8 @@
 #include <QJsonObject>
 #include <QTimer>
 
-ConfigBridge::ConfigBridge(QObject *parent) : QObject(parent) {
+ConfigBridge::ConfigBridge(QObject *parent)
+    : QObject(parent), m_loading(false) {
   // Initialize Sub-components
   m_plugin = new Plugin(this);
 
@@ -45,7 +47,6 @@ ConfigBridge::ConfigBridge(QObject *parent) : QObject(parent) {
   connect(m_rightHandle, &HandleSettings::settingsChanged, this,
           &ConfigBridge::requestSave);
 
-
   connect(m_actionRegistry, &ActionRegistry::gesturesChanged, this,
           &ConfigBridge::requestSave);
   connect(m_actionRegistry, &ActionRegistry::actionsChanged, this,
@@ -55,6 +56,12 @@ ConfigBridge::ConfigBridge(QObject *parent) : QObject(parent) {
           &ConfigBridge::onPluginsScanned);
   connect(m_actionRegistry, &ActionRegistry::blacklistChanged, this,
           &ConfigBridge::requestSave);
+
+  connect(m_settingsManager, &SettingsManager::configChanged, this,
+          [this](const QJsonObject &root) {
+            Q_UNUSED(root);
+            loadConfig();
+          });
 
   // Load config
   m_engineControl->cleanUp();
@@ -100,6 +107,9 @@ void ConfigBridge::setSplitMode(int mode) {
 
 // Methods
 void ConfigBridge::requestSave() {
+  if (m_loading)
+    return;
+
   if (!m_saveTimer->isActive()) {
     m_saveTimer->start();
   }
@@ -127,15 +137,17 @@ void ConfigBridge::setPreviewHandle(bool pressed, bool isLeft) {
 }
 
 void ConfigBridge::setWindowDark(bool dark) {
-  // Legacy method
+  WindowsUtils::setWindowDark(dark);
 }
 
 void ConfigBridge::loadConfig() {
+  m_loading = true;
+
   QJsonObject root = m_settingsManager->load();
   m_configCache = root.toVariantMap();
 
   // Load Engine Status
-  m_engineEnabled = root["engine_enabled"].toBool(true);
+  setEngineEnabled(root["engine_enabled"].toBool(true));
 
   // Load Sub-objects
   m_physics->loadFromConfig(root);
@@ -145,18 +157,22 @@ void ConfigBridge::loadConfig() {
 
   // Load Split Mode from general (after physics loaded general)
   if (root.contains("general")) {
-    m_splitMode = root["general"].toObject()["split_mode"].toInt(0);
+    setSplitMode(root["general"].toObject()["split_mode"].toInt(0));
   } else {
-    m_splitMode = 0;
+    setSplitMode(0);
   }
 
   QJsonArray pluginsArr = root["enabled_plugins"].toArray();
-  m_enabledPlugins.clear();
+  QStringList pluginsList;
   for (const auto &val : pluginsArr)
-    m_enabledPlugins.append(val.toString());
+    pluginsList.append(val.toString());
+  setEnabledPlugins(pluginsList);
 
   // Explicitly set engine state
   m_engineControl->setEnabled(m_engineEnabled);
+
+  m_loading = false;
+  emit settingsChanged();
 }
 
 void ConfigBridge::generateConfig() {
