@@ -52,8 +52,6 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  // Fix for high DPI scaling behavior
-  // QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 
   QGuiApplication app(argc, argv);
   app.setQuitOnLastWindowClosed(false);

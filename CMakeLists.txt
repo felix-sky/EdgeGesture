@@ -84,6 +84,7 @@ set(UI_RESOURCES "src_ui/resources.qrc")
 add_executable(SettingsUI 
     ${UI_SRCS} 
     ${UI_RESOURCES}
+    "src_ui/app_icon.rc"
 )
 
 target_include_directories(SettingsUI PRIVATE "src_ui/FluentUI/src")
