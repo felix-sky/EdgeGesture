@@ -31,7 +31,7 @@
 <h3 align="center">EdgeGesture</h3>
 
   <p align="center">
-    EdgeGesture enables edge gesture to your windows computer, enhancing the touchscreen experience.
+    EdgeGesture enables edge gesture to your windows computer, enhancing the touchscreen experience. Project is still under development, expect features not working.
     <br />
     <a href="https://github.com/felix-sky/EdgeGesture">View Demo</a>
     &middot;
@@ -102,9 +102,8 @@ Download from release page, run SettingsUI.exe. And enjoy!
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
+Swipe from the left (top edge is under development) edge of the screen to trigger the gesture. Blacklists, plugins, action recordings etc. are all configured in SettingsUI.exe.
 
-_For more examples, please refer to the [Documentation](https://example.com)_
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
