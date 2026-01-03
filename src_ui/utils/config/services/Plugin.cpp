@@ -1,6 +1,33 @@
 #include "Plugin.h"
+#include <QFile>
+#include <QRegularExpression>
+#include <QTextStream>
+
 
 Plugin::Plugin(QObject *parent) : QObject(parent) {}
+
+bool isItemRoot(const QString &path) {
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    return false;
+
+  QTextStream in(&file);
+  QString content = in.readAll();
+
+  // Simple heuristic: Remove comments and find first brace
+  // Note: This is a basic check.
+  QRegularExpression re("//.*|/\\*.*?\\*/");
+  content.replace(re, "");
+
+  QRegularExpression rootRe("^\\s*(\\w+)\\s*\\{",
+                            QRegularExpression::MultilineOption);
+  QRegularExpressionMatch match = rootRe.match(content);
+  if (match.hasMatch()) {
+    QString type = match.captured(1);
+    return type == "Item";
+  }
+  return false;
+}
 
 void Plugin::scanPlugins() {
   m_plugins.clear();
@@ -11,6 +38,9 @@ void Plugin::scanPlugins() {
     const QFileInfoList list =
         qrcDir.entryInfoList(QStringList() << "*.qml", QDir::Files);
     for (const QFileInfo &info : list) {
+      if (!isItemRoot(info.absoluteFilePath()))
+        continue;
+
       QVariantMap plugin;
       plugin["name"] = info.baseName();
       plugin["path"] = "qrc:/plugin/" + info.fileName();
@@ -19,10 +49,10 @@ void Plugin::scanPlugins() {
   }
 
   // 2. Scan Filesystem (Overrides QRC if name matches)
-  // Look in executable directory and user-created plugin folder
+  // Look in plugin/components folder
   QStringList searchPaths;
-  searchPaths << QCoreApplication::applicationDirPath() + "/plugin";
-  searchPaths << QDir::currentPath() + "/plugin";
+  searchPaths << QCoreApplication::applicationDirPath() + "/plugin/components";
+  searchPaths << QDir::currentPath() + "/plugin/components";
 
   for (const QString &path : searchPaths) {
     QDir dir(path);
@@ -30,6 +60,9 @@ void Plugin::scanPlugins() {
       const QFileInfoList list =
           dir.entryInfoList(QStringList() << "*.qml", QDir::Files);
       for (const QFileInfo &info : list) {
+        if (!isItemRoot(info.absoluteFilePath()))
+          continue;
+
         QVariantMap plugin;
         plugin["name"] = info.baseName();
         plugin["path"] = "file:///" + info.absoluteFilePath();

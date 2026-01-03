@@ -80,7 +80,8 @@ FluScrollablePage {
                 font: FluTextStyle.BodyStrong
             }
             FluComboBox {
-                model: ["Left", "Right"]
+                // model: ["Left", "Right"]
+                model: ["left"]
                 onCurrentTextChanged: currentSide = currentText
             }
         }

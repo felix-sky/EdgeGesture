@@ -61,7 +61,10 @@ FluScrollablePage {
                         Layout.fillWidth: true
                     }
                     FluToggleSwitch {
-                        checked: false
+                        checked: SystemBridge.startWithWindows
+                        onClicked: {
+                            SystemBridge.startWithWindows = checked;
+                        }
                     }
                 }
             }

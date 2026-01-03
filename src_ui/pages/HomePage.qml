@@ -173,20 +173,21 @@ FluScrollablePage {
                     color: FluTheme.dark ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(0, 0, 0, 0.1)
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    FluText {
-                        text: "Enable Right Handle"
-                        Layout.fillWidth: true
-                        font: FluTextStyle.BodyStrong
-                    }
-                    FluToggleSwitch {
-                        text: "On"
-                        checked: ConfigBridge.rightHandle.enabled
-                        onClicked: ConfigBridge.rightHandle.enabled = checked
-                        // Binding needed in C++ bridge
-                    }
-                }
+                // RowLayout {
+                //     Layout.fillWidth: true
+                //     FluText {
+                //         text: "Enable Right Handle"
+                //         Layout.fillWidth: true
+                //         font: FluTextStyle.BodyStrong
+
+                //     }
+                //     FluToggleSwitch {
+                //         text: "On"
+                //         checked: ConfigBridge.rightHandle.enabled
+                //         onClicked: ConfigBridge.rightHandle.enabled = checked
+                //         // Binding needed in C++ bridge
+                //     }
+                // }
             }
         }
         FluText {

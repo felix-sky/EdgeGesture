@@ -1,5 +1,6 @@
 #include "SystemBridge.h"
 #include <QClipboard>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -7,6 +8,7 @@
 #include <QImage>
 #include <QMimeData>
 #include <QProcess>
+#include <QSettings>
 #include <QUrl>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -36,10 +38,9 @@ SystemBridge::SystemBridge(QObject *parent) : QObject(parent) {
 
   // Get initial system states
   updateWifiState();
-  updateBluetoothState();
-  updateNightLightState();
   updateBrightnessLevel();
   updateVolumeLevel();
+  updateStartWithWindowsState();
 }
 
 void SystemBridge::updateWifiState() {
@@ -70,16 +71,6 @@ void SystemBridge::updateWifiState() {
     }
     WlanCloseHandle(hClient, NULL);
   }
-}
-
-void SystemBridge::updateBluetoothState() {
-  // Bluetooth state detection simplified - just use settings launcher
-  // The bluetoothapis.h header has compilation issues with modern MSVC
-}
-
-void SystemBridge::updateNightLightState() {
-  // Night Light state tracking (registry query would be complex)
-  // We'll track it internally as a toggle
 }
 
 void SystemBridge::updateBrightnessLevel() {
@@ -186,6 +177,7 @@ void SystemBridge::updateVolumeLevel() {
   }
 }
 
+// Unfortunately, not working
 void SystemBridge::setBrightnessLevel(int level) {
   if (level < 0)
     level = 0;
@@ -431,4 +423,38 @@ QString SystemBridge::saveClipboardImage(const QString &saveDir) {
     }
   }
   return "";
+}
+
+void SystemBridge::updateStartWithWindowsState() {
+  QSettings bootSettings(
+      "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      QSettings::NativeFormat);
+  bool enabled = bootSettings.contains("EdgeGesture");
+  if (m_startWithWindows != enabled) {
+    m_startWithWindows = enabled;
+    emit startWithWindowsChanged();
+  }
+}
+
+void SystemBridge::setStartWithWindows(bool enable) {
+  if (m_startWithWindows != enable) {
+    QSettings bootSettings(
+        "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        QSettings::NativeFormat);
+
+    // Register the current application (SettingsUI.exe) to start with Windows
+    // It will be responsible for starting GestureEngine.exe
+    QString appPath =
+        QDir::toNativeSeparators(QCoreApplication::applicationFilePath());
+
+    if (enable) {
+      bootSettings.setValue("EdgeGesture", "\"" + appPath + "\"");
+    } else {
+      bootSettings.remove("EdgeGesture");
+    }
+
+    m_startWithWindows = enable;
+    emit startWithWindowsChanged();
+    qDebug() << "[SystemBridge] Start with Windows set to:" << enable;
+  }
 }

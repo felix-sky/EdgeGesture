@@ -16,6 +16,8 @@ class SystemBridge : public QObject {
                  NOTIFY brightnessLevelChanged)
   Q_PROPERTY(int volumeLevel READ volumeLevel WRITE setVolumeLevel NOTIFY
                  volumeLevelChanged)
+  Q_PROPERTY(bool startWithWindows READ isStartWithWindowsEnabled WRITE
+                 setStartWithWindows NOTIFY startWithWindowsChanged)
 
 public:
   explicit SystemBridge(QObject *parent = nullptr);
@@ -26,10 +28,12 @@ public:
   bool nightLightEnabled() const { return m_nightLightEnabled; }
   int brightnessLevel() const { return m_brightnessLevel; }
   int volumeLevel() const { return m_volumeLevel; }
+  bool isStartWithWindowsEnabled() const { return m_startWithWindows; }
 
   // Setters
   void setBrightnessLevel(int level);
   void setVolumeLevel(int level);
+  void setStartWithWindows(bool enable);
 
   // System Control Methods
   Q_INVOKABLE void toggleWifi();
@@ -53,6 +57,7 @@ signals:
   void nightLightEnabledChanged();
   void brightnessLevelChanged();
   void volumeLevelChanged();
+  void startWithWindowsChanged();
 
 private:
   bool m_wifiEnabled = false;
@@ -60,12 +65,12 @@ private:
   bool m_nightLightEnabled = false;
   int m_brightnessLevel = 75;
   int m_volumeLevel = 50;
+  bool m_startWithWindows = false;
 
   void updateWifiState();
-  void updateBluetoothState();
-  void updateNightLightState();
   void updateBrightnessLevel();
   void updateVolumeLevel();
+  void updateStartWithWindowsState();
 };
 
 #endif // SYSTEMBRIDGE_H
