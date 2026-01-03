@@ -93,7 +93,7 @@
 <!-- GETTING STARTED -->
 ## Getting Started
 
-Download from release page. And enjoy!
+Download from release page, run SettingsUI.exe. And enjoy!
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -123,6 +123,33 @@ Don't forget to give the project a star! Thanks again!
 3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+
+### Plugin Development
+
+EdgeGesture supports plugin development via **QML**. Because QML operates within a sandboxed environment, you must use C++ bridges to interact with the system.
+
+**Available C++ Bridges:**
+
+* `FileBridge`: File system operations.
+* `SystemBridge`: System-level interactions.
+* `ConfigBridge`: Configuration management.
+
+> **Note:** Dynamic loading of DLLs is currently under development.
+
+### Development Guidelines
+
+Plugins are hosted within `src_ui/plugin/PluginContainer.qml` (a `SwipeView` component). To develop a plugin, please follow these requirements:
+
+* **Component Type:** The plugin must be a QML `Item`.
+* **Directory:** Place your files in `plugin/components/`.
+* **Dimensions:** Due to a known issue, the width must currently be set to **360**.
+* **Preview Image:** Additionally a snapshot of the plugin (aspect ratio **360:800**) can be placed in `plugin/preview/`.
+
+**Workflow:**
+Since EdgeGesture scans and loads plugins at runtime upon startup, you can develop and test plugins without a full Qt Creator environment or the official SDK (though I haven't tested it).
+
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

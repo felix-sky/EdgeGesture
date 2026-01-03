@@ -47,7 +47,6 @@ Item {
         if (!path)
             return;
 
-        // 简单的去重
         for (var i = 0; i < appsModel.count; ++i) {
             if (appsModel.get(i).path === path)
                 return;
