@@ -149,13 +149,15 @@ Plugins are hosted within `src_ui/plugin/PluginContainer.qml` (a `SwipeView` com
 **Workflow:**
 Since EdgeGesture scans and loads plugins at runtime upon startup, you can develop and test plugins without a full Qt Creator environment or the official SDK (though I haven't tested it).
 
-#### Not developing plugins for PluginContainer
-Use `src_ui/plugin/PluginContainer.qml` as a template to develop plugins. The plugin will be loaded at runtime and recognized as a new action.
 
 #### Developing plugins for PluginContainer
-Use `src_ui/plugin/PluginContainer.qml` as a template to develop plugins. The plugin will be loaded at runtime and displayed in the PluginContainer.
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+Use `src_ui/plugin/components/*.qml` as a template to develop plugins (place your plugins (for PluginContainer) here as well). The plugin will be loaded at runtime and displayed in the PluginContainer.
 
+
+#### Not developing plugins for PluginContainer
+Use `src_ui/plugin/PluginContainer.qml` as a template to develop plugins. In this case, place your plugins (`not`for PluginContainer) in `src_ui/plugin`. The plugin will be loaded at runtime and recognized as a new action.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- LICENSE -->
 ## License
