@@ -1,4 +1,4 @@
-import QtQuick.Dialogs
+import Qt.labs.platform 1.1
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Controls 2.15
@@ -14,8 +14,7 @@ FluScrollablePage {
         title: "Select Application"
         nameFilters: ["Executables (*.exe)", "All Files (*)"]
         onAccepted: {
-            // Parse URL to get filename (e.g. file:///C:/Windows/notepad.exe -> notepad.exe)
-            var path = fileDialog.selectedFile.toString();
+            var path = fileDialog.file.toString();
             if (path.startsWith("file:///")) {
                 path = path.substring(8);
             } else if (path.startsWith("file://")) {
