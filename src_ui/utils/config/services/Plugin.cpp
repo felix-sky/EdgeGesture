@@ -3,7 +3,6 @@
 #include <QRegularExpression>
 #include <QTextStream>
 
-
 Plugin::Plugin(QObject *parent) : QObject(parent) {}
 
 bool isItemRoot(const QString &path) {
@@ -31,30 +30,15 @@ bool isItemRoot(const QString &path) {
 
 void Plugin::scanPlugins() {
   m_plugins.clear();
+  QVariantList callablePlugins;
 
-  // 1. Scan QRC (Built-in)
-  QDir qrcDir(":/plugin");
-  if (qrcDir.exists()) {
-    const QFileInfoList list =
-        qrcDir.entryInfoList(QStringList() << "*.qml", QDir::Files);
-    for (const QFileInfo &info : list) {
-      if (!isItemRoot(info.absoluteFilePath()))
-        continue;
+  // Scan component plugins from plugin/components/ (for PluginSettingsPage)
+  QStringList componentPaths;
+  componentPaths << QCoreApplication::applicationDirPath() +
+                        "/plugin/components";
+  componentPaths << QDir::currentPath() + "/plugin/components";
 
-      QVariantMap plugin;
-      plugin["name"] = info.baseName();
-      plugin["path"] = "qrc:/plugin/" + info.fileName();
-      m_plugins.append(plugin);
-    }
-  }
-
-  // 2. Scan Filesystem (Overrides QRC if name matches)
-  // Look in plugin/components folder
-  QStringList searchPaths;
-  searchPaths << QCoreApplication::applicationDirPath() + "/plugin/components";
-  searchPaths << QDir::currentPath() + "/plugin/components";
-
-  for (const QString &path : searchPaths) {
+  for (const QString &path : componentPaths) {
     QDir dir(path);
     if (dir.exists()) {
       const QFileInfoList list =
@@ -67,26 +51,114 @@ void Plugin::scanPlugins() {
         plugin["name"] = info.baseName();
         plugin["path"] = "file:///" + info.absoluteFilePath();
 
-        // Check if exists and override
-        bool replaced = false;
+        // Check if already exists (avoid duplicates from both paths)
+        bool exists = false;
         for (int i = 0; i < m_plugins.size(); ++i) {
           if (m_plugins[i].toMap()["name"] == plugin["name"]) {
-            m_plugins[i] = plugin;
-            replaced = true;
+            exists = true;
             break;
           }
         }
-        if (!replaced) {
+        if (!exists) {
           m_plugins.append(plugin);
         }
       }
     }
   }
 
-  qDebug() << "[Plugin] Scanned plugins, found:" << m_plugins.size();
+  // Also scan qrc:/plugin/components for embedded components
+  QDir qrcComponentDir(":/plugin/components");
+  if (qrcComponentDir.exists()) {
+    const QFileInfoList list =
+        qrcComponentDir.entryInfoList(QStringList() << "*.qml", QDir::Files);
+    for (const QFileInfo &info : list) {
+      if (!isItemRoot(info.absoluteFilePath()))
+        continue;
+
+      QString name = info.baseName();
+      // Check if already exists (external overrides qrc)
+      bool exists = false;
+      for (int i = 0; i < m_plugins.size(); ++i) {
+        if (m_plugins[i].toMap()["name"] == name) {
+          exists = true;
+          break;
+        }
+      }
+      if (!exists) {
+        QVariantMap plugin;
+        plugin["name"] = name;
+        plugin["path"] = "qrc:/plugin/components/" + info.fileName();
+        m_plugins.append(plugin);
+      }
+    }
+  }
+
+  // Scan callable plugins from plugin/ root (for ActionRegistry)
+  // These are the ones that can be triggered by gestures
+  QStringList callablePaths;
+  callablePaths << QCoreApplication::applicationDirPath() + "/plugin";
+  callablePaths << QDir::currentPath() + "/plugin";
+
+  for (const QString &path : callablePaths) {
+    QDir dir(path);
+    if (dir.exists()) {
+      const QFileInfoList list =
+          dir.entryInfoList(QStringList() << "*.qml", QDir::Files);
+      for (const QFileInfo &info : list) {
+        if (!isItemRoot(info.absoluteFilePath()))
+          continue;
+
+        QVariantMap plugin;
+        plugin["name"] = info.baseName();
+        plugin["path"] = "file:///" + info.absoluteFilePath();
+
+        // Check if already exists in callable list
+        bool exists = false;
+        for (int i = 0; i < callablePlugins.size(); ++i) {
+          if (callablePlugins[i].toMap()["name"] == plugin["name"]) {
+            exists = true;
+            break;
+          }
+        }
+        if (!exists) {
+          callablePlugins.append(plugin);
+        }
+      }
+    }
+  }
+
+  // Also scan qrc:/plugin root for embedded callable plugins
+  QDir qrcDir(":/plugin");
+  if (qrcDir.exists()) {
+    const QFileInfoList list =
+        qrcDir.entryInfoList(QStringList() << "*.qml", QDir::Files);
+    for (const QFileInfo &info : list) {
+      if (!isItemRoot(info.absoluteFilePath()))
+        continue;
+
+      QString name = info.baseName();
+      bool exists = false;
+      for (int i = 0; i < callablePlugins.size(); ++i) {
+        if (callablePlugins[i].toMap()["name"] == name) {
+          exists = true;
+          break;
+        }
+      }
+      if (!exists) {
+        QVariantMap plugin;
+        plugin["name"] = name;
+        plugin["path"] = "qrc:/plugin/" + info.fileName();
+        callablePlugins.append(plugin);
+      }
+    }
+  }
+
+  qDebug() << "[Plugin] Scanned component plugins:" << m_plugins.size();
+  qDebug() << "[Plugin] Scanned callable plugins:" << callablePlugins.size();
 
   emit pluginsChanged();
-  emit pluginsScanned(m_plugins);
+  // Only emit callable plugins to ActionRegistry
+  emit pluginsScanned(callablePlugins);
 }
 
 QString Plugin::getPluginPath(const QString &name) {

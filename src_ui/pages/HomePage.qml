@@ -8,6 +8,7 @@ FluScrollablePage {
     leftPadding: 20
     rightPadding: 20
 
+
     ColumnLayout {
         spacing: 20
         width: parent.width
