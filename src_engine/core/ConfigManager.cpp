@@ -6,7 +6,6 @@
 
 void ConfigManager::Load() {
   if (!std::filesystem::exists(m_configPath)) {
-    // Create default
     json j;
     j["physics"] = {{"tension", 0.35}, {"friction", 0.65}};
     j["general"] = {{"trigger_threshold", 90.0},
@@ -41,12 +40,43 @@ void ConfigManager::Load() {
     o << std::setw(4) << j << std::endl;
   }
 
+  LoadFromPath(m_configPath);
+  m_currentProfile = "default";
+}
+
+void ConfigManager::LoadProfile(const std::string &appName) {
+  if (appName == m_currentProfile) {
+    return;
+  }
+
+  std::string profilePath = m_configsDir + "/" + appName + ".json";
+  std::string defaultPath = m_configsDir + "/default.json";
+
+  if (std::filesystem::exists(profilePath)) {
+    LoadFromPath(profilePath);
+    m_currentProfile = appName;
+    std::cout << "[Config] Loaded profile: " << appName << std::endl;
+  } else if (std::filesystem::exists(defaultPath)) {
+    LoadFromPath(defaultPath);
+    m_currentProfile = "default";
+    std::cout << "[Config] Profile not found, using default" << std::endl;
+  } else {
+    std::cout << "[Config] No profile or default found, keeping current"
+              << std::endl;
+    return;
+  }
+
+  if (m_profileChangeCb) {
+    m_profileChangeCb(m_currentProfile);
+  }
+}
+
+void ConfigManager::LoadFromPath(const std::string &path) {
   try {
-    std::ifstream i(m_configPath);
+    std::ifstream i(path);
     json j;
     i >> j;
 
-    // Ensure default actions exist (patching existing configs)
     bool modified = false;
     if (!j.contains("actions")) {
       j["actions"] = json::object();
@@ -68,18 +98,16 @@ void ConfigManager::Load() {
     }
 
     if (modified) {
-      std::ofstream o(m_configPath);
+      std::ofstream o(path);
       o << std::setw(4) << j << std::endl;
       std::cout << "[Config] Updated config with missing actions." << std::endl;
     }
 
-    // Physics
     if (j.contains("physics")) {
       m_config.tension = j["physics"].value("tension", 0.35f);
       m_config.friction = j["physics"].value("friction", 0.65f);
     }
 
-    // General
     if (j.contains("general")) {
       m_config.triggerThreshold =
           j["general"].value("trigger_threshold", 90.0f);
@@ -92,7 +120,6 @@ void ConfigManager::Load() {
           j["general"].value("short_swipe_threshold", 30.0f);
     }
 
-    // Left
     if (j.contains("left_handle")) {
       auto &l = j["left_handle"];
       m_config.left.enabled = l.value("enabled", true);
@@ -102,7 +129,6 @@ void ConfigManager::Load() {
       m_config.left.color = l.value("color", "#000000");
     }
 
-    // Right
     if (j.contains("right_handle")) {
       auto &r = j["right_handle"];
       m_config.right.enabled = r.value("enabled", true);
@@ -112,7 +138,6 @@ void ConfigManager::Load() {
       m_config.right.color = r.value("color", "#000000");
     }
 
-    // Actions
     if (j.contains("actions")) {
       m_config.actionMap.clear();
       for (auto &el : j["actions"].items()) {
@@ -120,7 +145,6 @@ void ConfigManager::Load() {
       }
     }
 
-    // Gestures
     if (j.contains("gestures")) {
       m_config.gestureMap.clear();
       for (auto &el : j["gestures"].items()) {
@@ -128,7 +152,6 @@ void ConfigManager::Load() {
       }
     }
 
-    // Blacklist
     m_config.blacklist.clear();
     if (j.contains("blacklist")) {
       for (const auto &val : j["blacklist"]) {
@@ -136,7 +159,7 @@ void ConfigManager::Load() {
       }
     }
 
-    std::cout << "[Config] Loaded" << std::endl;
+    std::cout << "[Config] Loaded from: " << path << std::endl;
 
   } catch (std::exception &e) {
     std::cerr << "[Config] Error loading config: " << e.what() << std::endl;

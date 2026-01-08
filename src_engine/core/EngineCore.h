@@ -23,16 +23,14 @@ private:
 
   void PhysicsLoop();
 
-  // Helpers
   bool IsBlacklistedAppActive();
+  std::string GetActiveProcessName();
 
   void DetermineGesture();
 
-  // Subsystems
   Visualizer m_vis;
   ActionDispatcher m_dispatcher;
 
-  // Physics State
   float m_currentX = 0;
   float m_currentY = 0;
   float m_velocityX = 0;
@@ -45,8 +43,10 @@ private:
   bool m_isAnimating = false;
   bool m_isLeft = true;
 
-  int m_timerId = 1001;
+  UINT_PTR m_timerId = 1001;
+  UINT_PTR m_profileTimerId = 2001;
 
   std::string m_currentAction;
-  std::string m_currentGestureName; // e.g. "Left->Right"
+  std::string m_currentGestureName;
+  std::string m_lastAppName;
 };

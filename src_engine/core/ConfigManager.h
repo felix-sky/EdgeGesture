@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -56,13 +57,24 @@ public:
   }
 
   void Load();
+  void LoadProfile(const std::string &appName);
   AppConfig &Current() { return m_config; }
+  std::string CurrentProfileName() const { return m_currentProfile; }
 
-  // Helper to get color ref from hex string
+  using ProfileChangeCallback = std::function<void(const std::string &)>;
+  void SetProfileChangeCallback(ProfileChangeCallback cb) {
+    m_profileChangeCb = cb;
+  }
+
   COLORREF GetColorRef(const std::string &hexFunc);
 
 private:
   ConfigManager() = default;
+  void LoadFromPath(const std::string &path);
+
   AppConfig m_config;
   std::string m_configPath = "config.json";
+  std::string m_configsDir = "configs";
+  std::string m_currentProfile = "default";
+  ProfileChangeCallback m_profileChangeCb;
 };

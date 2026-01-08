@@ -16,7 +16,6 @@
 
 ConfigBridge::ConfigBridge(QObject *parent)
     : QObject(parent), m_loading(false) {
-  // Initialize Sub-components
   m_plugin = new Plugin(this);
 
   m_engineControl = new EngineControl(this);
@@ -24,7 +23,8 @@ ConfigBridge::ConfigBridge(QObject *parent)
   m_settingsManager = new SettingsManager(this);
   m_profileManager = new ProfileManager(this);
 
-  // Connect profile manager - reload config when profile switches
+  m_profileManager->setSettingsManager(m_settingsManager);
+
   connect(m_profileManager, &ProfileManager::configSwitched, this, [this]() {
     loadConfig();
     m_engineControl->notifyChanges();

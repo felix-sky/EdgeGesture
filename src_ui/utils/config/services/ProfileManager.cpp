@@ -1,4 +1,5 @@
 #include "ProfileManager.h"
+#include "SettingsManager.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -7,12 +8,10 @@
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 
-
 ProfileManager::ProfileManager(QObject *parent)
     : QObject(parent), m_currentProfile("default") {
   ensureConfigsDir();
 
-  // Setup file watcher
   m_watcher = new QFileSystemWatcher(this);
   m_watcher->addPath(configsDir());
 
@@ -25,20 +24,22 @@ ProfileManager::ProfileManager(QObject *parent)
   scanProfiles();
 }
 
+void ProfileManager::setSettingsManager(SettingsManager *manager) {
+  m_settingsManager = manager;
+}
+
 void ProfileManager::ensureConfigsDir() {
   QDir dir(configsDir());
   if (!dir.exists()) {
     dir.mkpath(".");
     qDebug() << "[ProfileManager] Created configs directory:" << configsDir();
 
-    // Create default.json by copying current config.json if it exists
     QString mainConfig = mainConfigPath();
     if (QFile::exists(mainConfig)) {
       copyFile(mainConfig, defaultProfilePath());
       qDebug() << "[ProfileManager] Created default.json from current config";
     }
   } else if (!QFile::exists(defaultProfilePath())) {
-    // configs dir exists but no default.json - create it
     QString mainConfig = mainConfigPath();
     if (QFile::exists(mainConfig)) {
       copyFile(mainConfig, defaultProfilePath());
@@ -72,9 +73,8 @@ void ProfileManager::scanProfiles() {
   QStringList files = dir.entryList(filters, QDir::Files);
 
   for (const QString &file : files) {
-    // Remove .json extension to get profile name
     QString profileName = file;
-    profileName.chop(5); // Remove ".json"
+    profileName.chop(5);
     if (profileName != "default") {
       m_profiles.append(profileName);
     }
@@ -90,22 +90,22 @@ bool ProfileManager::addProfile(const QString &processName) {
     return false;
   }
 
-  // Check if profile already exists
   if (m_profiles.contains(processName)) {
     qWarning() << "[ProfileManager] Profile already exists:" << processName;
     return false;
   }
 
-  // Copy current config.json to the new profile
-  QString mainConfig = mainConfigPath();
+  QString sourceConfig = m_settingsManager
+                             ? m_settingsManager->currentConfigPath()
+                             : mainConfigPath();
   QString newProfilePath = profilePath(processName);
 
-  if (!QFile::exists(mainConfig)) {
-    qWarning() << "[ProfileManager] No config.json to copy from";
+  if (!QFile::exists(sourceConfig)) {
+    qWarning() << "[ProfileManager] No source config to copy from";
     return false;
   }
 
-  if (!copyFile(mainConfig, newProfilePath)) {
+  if (!copyFile(sourceConfig, newProfilePath)) {
     qWarning() << "[ProfileManager] Failed to create profile:" << processName;
     return false;
   }
@@ -128,7 +128,6 @@ bool ProfileManager::removeProfile(const QString &processName) {
     return false;
   }
 
-  // If this is the current profile, switch to default first
   if (m_currentProfile == processName) {
     switchToDefault();
   }
@@ -150,7 +149,6 @@ bool ProfileManager::switchToProfile(const QString &processName) {
     return true;
   }
 
-  // Check if already on this profile
   if (m_currentProfile == processName) {
     qDebug() << "[ProfileManager] Already on profile:" << processName;
     return true;
@@ -170,38 +168,12 @@ bool ProfileManager::switchToProfile(const QString &processName) {
     return false;
   }
 
-  QString mainConfig = mainConfigPath();
-
-  // Step 1: Save current config to old profile
-  QString oldProfilePath;
-  if (m_currentProfile == "default") {
-    oldProfilePath = defaultProfilePath();
-  } else {
-    oldProfilePath = profilePath(m_currentProfile);
-  }
-
-  // Move (not copy) current config.json to old profile
-  if (QFile::exists(mainConfig)) {
-    // Remove old profile file first if it exists
-    if (QFile::exists(oldProfilePath)) {
-      QFile::remove(oldProfilePath);
-    }
-    if (!moveFile(mainConfig, oldProfilePath)) {
-      qWarning() << "[ProfileManager] Failed to save current config to profile";
-      return false;
-    }
-    qDebug() << "[ProfileManager] Saved current config to:" << oldProfilePath;
-  }
-
-  // Step 2: Copy target profile to config.json
-  if (!copyFile(targetProfilePath, mainConfig)) {
-    qWarning() << "[ProfileManager] Failed to activate profile:" << processName;
-    // Try to restore
-    moveFile(oldProfilePath, mainConfig);
-    return false;
-  }
-
   m_currentProfile = processName;
+
+  if (m_settingsManager) {
+    m_settingsManager->setCurrentConfigPath(targetProfilePath);
+  }
+
   qDebug() << "[ProfileManager] Switched to profile:" << processName;
   emit currentProfileChanged();
   emit configSwitched();
@@ -209,6 +181,25 @@ bool ProfileManager::switchToProfile(const QString &processName) {
 }
 
 void ProfileManager::switchToDefault() { switchToProfile("default"); }
+
+void ProfileManager::setCurrentProfile(const QString &profileName) {
+  if (m_currentProfile != profileName) {
+    m_currentProfile = profileName;
+
+    QString targetPath;
+    if (profileName == "default") {
+      targetPath = defaultProfilePath();
+    } else {
+      targetPath = profilePath(profileName);
+    }
+
+    if (m_settingsManager && QFile::exists(targetPath)) {
+      m_settingsManager->setCurrentConfigPath(targetPath);
+    }
+
+    emit currentProfileChanged();
+  }
+}
 
 bool ProfileManager::copyFile(const QString &src, const QString &dest) {
   if (QFile::exists(dest)) {
