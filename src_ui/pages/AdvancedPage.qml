@@ -140,7 +140,7 @@ FluScrollablePage {
                     Layout.fillWidth: true
 
                     FluText {
-                        text: "Current Profile:"
+                        text: "You are editing:"
                         font: FluTextStyle.BodyStrong
                         Layout.alignment: Qt.AlignVCenter
                     }
@@ -158,32 +158,26 @@ FluScrollablePage {
                         text: "Refresh"
                         onClicked: {
                             ConfigBridge.profileManager.scanProfiles();
-                            profileScope.profileModel = ConfigBridge.profileManager.profiles;
                         }
                     }
                 }
 
-                property var profileModel: ConfigBridge.profileManager.profiles
-
-                Connections {
-                    target: ConfigBridge.profileManager
-                    function onProfilesChanged() {
-                        profileScope.profileModel = ConfigBridge.profileManager.profiles;
-                    }
-                }
 
                 ListView {
                     id: profileList
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    Layout.preferredHeight: 150
                     clip: true
-                    model: profileScope.profileModel
+                    model: ConfigBridge.profileManager.profiles
 
                     delegate: Rectangle {
-                        width: ListView.view.width
+                        // width: ListView.view.width
+                        width: profileList.width
                         height: 40
                         color: ConfigBridge.profileManager.currentProfile === modelData ? (FluTheme.dark ? "#2a4d3e" : "#d4edda") : "transparent"
                         radius: 4
+
 
                         MouseArea {
                             anchors.fill: parent
@@ -243,6 +237,8 @@ FluScrollablePage {
                 }
             }
         }
+
+        // Blacklist section
 
         FluText {
             text: "Blacklist (App Exceptions)"
