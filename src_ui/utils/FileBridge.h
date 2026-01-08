@@ -78,6 +78,35 @@ public:
    */
   Q_INVOKABLE QString getAppPath();
 
+  /**
+   * @brief Lists all files and directories in a directory.
+   * @param path The directory path.
+   * @return A JSON array string of objects with name, path, isDir, and
+   * modifiedDate.
+   */
+  Q_INVOKABLE QString listDirectory(const QString &path);
+
+  /**
+   * @brief Removes a directory and all its contents recursively.
+   * @param path The directory path.
+   * @return True if successful, false otherwise.
+   */
+  Q_INVOKABLE bool removeDirectory(const QString &path);
+
+  /**
+   * @brief Checks if the given path is a directory.
+   * @param path The path to check.
+   * @return True if it's a directory, false otherwise.
+   */
+  Q_INVOKABLE bool isDirectory(const QString &path);
+
+  /**
+   * @brief Gets the file name without extension from a path.
+   * @param path The path.
+   * @return The file name without extension.
+   */
+  Q_INVOKABLE QString getBaseName(const QString &path);
+
 private:
   QString normalizePath(const QString &path);
 };

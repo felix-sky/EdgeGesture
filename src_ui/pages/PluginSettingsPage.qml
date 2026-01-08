@@ -8,10 +8,27 @@ FluPage {
     id: root
     title: "Plugins"
 
+    Connections {
+        target: ConfigBridge.profileManager
+        function onCurrentProfileChanged() {
+            listView.model = null;
+            listView.model = Plugin.plugins;
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 20
         spacing: 20
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 10
+
+            Item {
+                Layout.fillWidth: true
+            }
+        }
 
         Item {
             Layout.fillWidth: true

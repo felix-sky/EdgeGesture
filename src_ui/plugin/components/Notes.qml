@@ -10,45 +10,149 @@ Item {
     anchors.top: parent.top
     anchors.bottom: parent.bottom
 
-    property string notesPath: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0] + "/EdgeGesture/notes.json"
+    // Base notes folder
+    property string notesRootPath: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0] + "/EdgeGesture/Notes"
+    property string currentFolderPath: notesRootPath
+    property var folderStack: []  // For navigation history
 
     Component.onCompleted: {
-        var dir = StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0] + "/EdgeGesture";
-        if (!FileBridge.exists(dir)) {
-            FileBridge.createDirectory(dir);
+        // Ensure root directory exists
+        if (!FileBridge.exists(notesRootPath)) {
+            FileBridge.createDirectory(notesRootPath);
         }
-        loadData();
+        loadCurrentFolder();
     }
 
-    // Save to Json
-    function saveData() {
-        var data = [];
-        for (var i = 0; i < notesModel.count; i++) {
-            data.push(notesModel.get(i));
-        }
-        var jsonStr = JSON.stringify(data, null, 4);
-        FileBridge.writeFile(notesPath, jsonStr);
-    }
+    // Load files and folders from current directory
+    function loadCurrentFolder() {
+        notesModel.clear();
 
-    function loadData() {
-        if (FileBridge.exists(notesPath)) {
-            var jsonStr = FileBridge.readFile(notesPath);
-            if (jsonStr) {
-                try {
-                    var data = JSON.parse(jsonStr);
-                    notesModel.clear();
-                    for (var i = 0; i < data.length; i++) {
-                        notesModel.append(data[i]);
-                    }
-                } catch (e) {
-                    console.log("Error parsing notes:", e);
+        var jsonStr = FileBridge.listDirectory(currentFolderPath);
+        try {
+            var items = JSON.parse(jsonStr);
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                // Only show .md files and folders
+                if (item.isDir || item.name.endsWith(".md")) {
+                    notesModel.append({
+                        "type": item.isDir ? "folder" : "note",
+                        "title": item.isDir ? item.name : item.baseName,
+                        "path": item.path,
+                        "date": item.modifiedDate,
+                        "color": "#624a73"  // Default color
+                    });
                 }
             }
+        } catch (e) {
+            console.log("Error loading folder:", e);
         }
+    }
+
+    // Navigate into a folder
+    function navigateToFolder(folderPath) {
+        folderStack.push(currentFolderPath);
+        currentFolderPath = folderPath;
+        loadCurrentFolder();
+    }
+
+    // Navigate back to parent folder
+    function navigateBack() {
+        if (folderStack.length > 0) {
+            currentFolderPath = folderStack.pop();
+            loadCurrentFolder();
+        }
+    }
+
+    // Create a new note file
+    function createNote(title, content, color) {
+        var safeName = title.replace(/[\\/:*?"<>|]/g, "_");
+        var filePath = currentFolderPath + "/" + safeName + ".md";
+
+        // Add color as frontmatter
+        var fileContent = "---\ncolor: " + color + "\n---\n" + content;
+        FileBridge.writeFile(filePath, fileContent);
+        loadCurrentFolder();
+        return filePath;
+    }
+
+    // Save existing note
+    function saveNote(filePath, content, color) {
+        var fileContent = "---\ncolor: " + color + "\n---\n" + content;
+        FileBridge.writeFile(filePath, fileContent);
+    }
+
+    // Read note content and metadata
+    function readNote(filePath) {
+        var content = FileBridge.readFile(filePath);
+        var result = {
+            "content": content,
+            "color": "#624a73"
+        };
+
+        // Parse frontmatter if exists
+        if (content.startsWith("---")) {
+            var endIndex = content.indexOf("---", 3);
+            if (endIndex > 0) {
+                var frontmatter = content.substring(3, endIndex);
+                var colorMatch = frontmatter.match(/color:\s*(#[a-fA-F0-9]+)/);
+                if (colorMatch) {
+                    result.color = colorMatch[1];
+                }
+                result.content = content.substring(endIndex + 4).trim();
+            }
+        }
+        return result;
+    }
+
+    // Create a new folder
+    function createFolder(name) {
+        var safeName = name.replace(/[\\/:*?"<>|]/g, "_");
+        var folderPath = currentFolderPath + "/" + safeName;
+        FileBridge.createDirectory(folderPath);
+        loadCurrentFolder();
+    }
+
+    // Delete file or folder
+    function deleteItem(path, isFolder) {
+        if (isFolder) {
+            FileBridge.removeDirectory(path);
+        } else {
+            FileBridge.removeFile(path);
+        }
+        loadCurrentFolder();
+    }
+
+    // Rename a file or folder
+    function renameItem(oldPath, newName, isFolder) {
+        var parentPath = oldPath.substring(0, oldPath.lastIndexOf("/"));
+        var safeName = newName.replace(/[\\/:*?"<>|]/g, "_");
+        var newPath = parentPath + "/" + safeName + (isFolder ? "" : ".md");
+
+        if (isFolder) {
+            FileBridge.createDirectory(newPath);
+        } else {
+            var content = FileBridge.readFile(oldPath);
+            FileBridge.writeFile(newPath, content);
+            FileBridge.removeFile(oldPath);
+        }
+        loadCurrentFolder();
     }
 
     signal closeRequested
     signal requestInputMode(bool active)
+
+    // Format path for display
+    function formatDisplayPath(path) {
+        var displayPath = path;
+        if (displayPath.startsWith("file:///")) {
+            displayPath = displayPath.substring(8);
+        }
+
+        // Replace slashes with separator
+        displayPath = displayPath.replace(/\//g, " › ");
+        displayPath = displayPath.replace(/\\/g, " › ");
+        return displayPath;
+    }
 
     ListModel {
         id: notesModel
@@ -62,7 +166,7 @@ Item {
         clip: true
     }
 
-    // Home
+    // Home - File Browser View
     Component {
         id: homeComponent
         Item {
@@ -70,73 +174,165 @@ Item {
                 anchors.fill: parent
                 spacing: 0
 
-                // Title
+                // Title bar with navigation
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 50
-                    Layout.leftMargin: 20
-                    Layout.rightMargin: 20
-                    spacing: 10
+                    Layout.leftMargin: 15
+                    Layout.rightMargin: 15
+                    spacing: 8
 
                     FluText {
-                        text: "Notes"
+                        id: noteTitle
+                        text: folderStack.length > 0 ? FileBridge.getFileName(currentFolderPath) : "Notes"
                         font: FluTextStyle.Title
                         Layout.alignment: Qt.AlignVCenter
+                        elide: Text.ElideMiddle
+                    }
+
+                    // Back button (when in subfolder)
+                    FluIconButton {
+                        visible: folderStack.length > 0
+                        iconSource: FluentIcons.Back
+                        iconSize: 14
+                        Layout.leftMargin: 4
+                        Layout.alignment: Qt.AlignVCenter
+                        onClicked: navigateBack()
+
+                        FluTooltip {
+                            visible: parent.hovered
+                            text: "Go back"
+                        }
                     }
 
                     Item {
                         Layout.fillWidth: true
                     }
 
-                    // Import button
+                    // Change folder button
                     FluIconButton {
-                        iconSource: FluentIcons.Download
+                        iconSource: FluentIcons.OpenFolderHorizontal
+                        iconSize: 14
                         Layout.alignment: Qt.AlignVCenter
-                        onClicked: importDialog.open()
+                        onClicked: folderDialog.open()
+
+                        FluTooltip {
+                            visible: parent.hovered
+                            text: "Open folder"
+                        }
                     }
 
-                    // New note
+                    // Import markdown button
+                    FluIconButton {
+                        iconSource: FluentIcons.Download
+                        iconSize: 14
+                        Layout.alignment: Qt.AlignVCenter
+                        onClicked: importDialog.open()
+
+                        FluTooltip {
+                            visible: parent.hovered
+                            text: "Import .md file"
+                        }
+                    }
+
+                    // New folder button
+                    FluIconButton {
+                        iconSource: FluentIcons.NewFolder
+                        iconSize: 14
+                        Layout.alignment: Qt.AlignVCenter
+                        onClicked: newFolderDialog.open()
+
+                        FluTooltip {
+                            visible: parent.hovered
+                            text: "New folder"
+                        }
+                    }
+
+                    // New note button
                     FluIconButton {
                         iconSource: FluentIcons.Add
+                        iconSize: 14
                         Layout.alignment: Qt.AlignVCenter
                         onClicked: {
-                            var newNote = {
-                                "type": "note",
-                                "title": "Untitled",
-                                "content": "",
-                                "color": "#624a73",
-                                "date": new Date().toLocaleString(Qt.locale(), "yyyy-MM-dd HH:mm")
-                            };
-                            notesModel.insert(0, newNote);
-                            saveData();
+                            var timestamp = new Date().getTime();
+                            var filePath = createNote("Untitled_" + timestamp, "", "#624a73");
                             stackView.push(editorComponent, {
-                                noteIndex: 0,
-                                noteData: newNote,
+                                notePath: filePath,
+                                noteTitle: "Untitled_" + timestamp,
                                 isEditing: true
                             });
                         }
                     }
                 }
 
-                // Note list
+                // Current path indicator
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 28
+                    Layout.leftMargin: 15
+                    Layout.rightMargin: 15
+                    color: FluTheme.dark ? Qt.rgba(1, 1, 1, 0.03) : Qt.rgba(0, 0, 0, 0.02)
+                    radius: 4
+
+                    FluText {
+                        anchors.fill: parent
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
+                        text: formatDisplayPath(currentFolderPath)
+                        font.pixelSize: 11
+                        color: FluTheme.dark ? "#888" : "#666"
+                        elide: Text.ElideMiddle
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
+                // File/Folder list
                 ListView {
                     id: listView
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
                     model: notesModel
-                    spacing: 10
+                    spacing: 8
                     topMargin: 10
                     bottomMargin: 10
 
                     delegate: Rectangle {
+                        id: delegateRoot
                         width: 320
-                        height: type === "folder" ? 60 : 100
+                        height: type === "folder" ? 56 : 80
                         radius: 8
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        color: FluTheme.dark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.03)
+                        x: (listView.width - width) / 2
+                        color: itemMouseArea.containsMouse ? (FluTheme.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05)) : (FluTheme.dark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.02))
 
+                        Behavior on color {
+                            ColorAnimation {
+                                duration: 150
+                            }
+                        }
+
+                        // MouseArea first (behind content)
+                        MouseArea {
+                            id: itemMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            z: 0
+                            onClicked: {
+                                if (type === "folder") {
+                                    navigateToFolder(model.path);
+                                } else {
+                                    stackView.push(editorComponent, {
+                                        notePath: model.path,
+                                        noteTitle: model.title,
+                                        isEditing: false
+                                    });
+                                }
+                            }
+                        }
+
+                        // Color indicator for notes
                         Rectangle {
+                            visible: type === "note"
                             width: 4
                             height: parent.height - 16
                             anchors.left: parent.left
@@ -144,57 +340,98 @@ Item {
                             anchors.leftMargin: 8
                             radius: 2
                             color: model.color
+                            z: 1
                         }
 
-                        ColumnLayout {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 20
-                            anchors.right: parent.right
-                            anchors.rightMargin: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 4
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: type === "note" ? 20 : 12
+                            anchors.rightMargin: 8
+                            spacing: 10
+                            z: 1
 
-                            RowLayout {
+                            // Icon
+                            FluIcon {
+                                iconSource: type === "folder" ? FluentIcons.FolderHorizontal : FluentIcons.QuickNote
+                                iconSize: 20
+                                color: type === "folder" ? "#FFB900" : (FluTheme.dark ? "#ccc" : "#666")
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            // Title and date
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                FluIcon {
-                                    iconSource: type === "folder" ? FluentIcons.FolderHorizontal : FluentIcons.QuickNote
-                                    iconSize: 14
-                                    color: FluTheme.dark ? "#ccc" : "#666"
-                                }
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 2
+
                                 FluText {
                                     text: title
                                     font: FluTextStyle.Subtitle
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
+
                                 FluText {
                                     text: date
-                                    font: FluTextStyle.Caption
-                                    color: FluTheme.dark ? "#888" : "#999"
+                                    font.pixelSize: 11
+                                    color: FluTheme.dark ? "#777" : "#999"
                                 }
+                            }
+
+                            // Delete button
+                            FluIconButton {
+                                iconSource: FluentIcons.Delete
+                                iconSize: 14
+                                opacity: itemMouseArea.containsMouse ? 1 : 0
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Behavior on opacity {
+                                    NumberAnimation {
+                                        duration: 150
+                                    }
+                                }
+
+                                onClicked: {
+                                    deleteConfirmDialog.itemPath = model.path;
+                                    deleteConfirmDialog.itemName = model.title;
+                                    deleteConfirmDialog.isFolder = (type === "folder");
+                                    deleteConfirmDialog.open();
+                                }
+                            }
+                        }
+                    }
+
+                    // Empty state
+                    Rectangle {
+                        visible: notesModel.count === 0
+                        anchors.centerIn: parent
+                        width: 200
+                        height: 120
+                        color: "transparent"
+
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 10
+
+                            FluIcon {
+                                iconSource: FluentIcons.Edit
+                                iconSize: 48
+                                color: FluTheme.dark ? "#555" : "#999"
+                                anchors.horizontalCenter: parent.horizontalCenter
                             }
 
                             FluText {
-                                visible: type === "note"
-                                text: content.replace(/[#*`]/g, "")
-                                color: FluTheme.dark ? "#aaa" : "#666"
-                                elide: Text.ElideRight
-                                maximumLineCount: 2
-                                Layout.fillWidth: true
-                                font.pixelSize: 12
+                                text: "No notes yet"
+                                color: FluTheme.dark ? "#666" : "#888"
+                                font.pixelSize: 14
+                                anchors.horizontalCenter: parent.horizontalCenter
                             }
-                        }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                if (type === "folder") {} else {
-                                    stackView.push(editorComponent, {
-                                        noteIndex: index,
-                                        noteData: notesModel.get(index),
-                                        isEditing: false
-                                    });
-                                }
+                            FluText {
+                                text: "Tap + to create one"
+                                color: FluTheme.dark ? "#555" : "#999"
+                                font.pixelSize: 12
+                                anchors.horizontalCenter: parent.horizontalCenter
                             }
                         }
                     }
@@ -203,27 +440,28 @@ Item {
         }
     }
 
+    // Editor Component
     Component {
         id: editorComponent
         Item {
             id: editorPage
-            property int noteIndex
-            property var noteData
+            property string notePath: ""
+            property string noteTitle: ""
             property bool isEditing: false
 
-            property string currentTitle: ""
             property string currentContent: ""
-            property string currentColor: ""
+            property string currentColor: "#624a73"
 
-            onNoteDataChanged: {
-                if (noteData) {
-                    currentTitle = noteData.title;
+            Component.onCompleted: {
+                root.requestInputMode(true);
+                // Load note content
+                if (notePath !== "" && FileBridge.exists(notePath)) {
+                    var noteData = readNote(notePath);
                     currentContent = noteData.content;
                     currentColor = noteData.color;
                 }
             }
 
-            Component.onCompleted: root.requestInputMode(true)
             Component.onDestruction: root.requestInputMode(false)
 
             Rectangle {
@@ -256,15 +494,19 @@ Item {
                             spacing: 5
 
                             TextInput {
-                                text: currentTitle
+                                id: titleInput
+                                text: noteTitle
                                 color: "#FFF"
                                 font.pixelSize: 13
                                 selectByMouse: true
                                 Layout.fillWidth: true
-                                onTextEdited: currentTitle = text
                                 onEditingFinished: {
-                                    notesModel.setProperty(noteIndex, "title", text);
-                                    saveData();
+                                    if (text !== noteTitle && text.trim() !== "") {
+                                        renameItem(notePath, text, false);
+                                        var parentPath = notePath.substring(0, notePath.lastIndexOf("/"));
+                                        notePath = parentPath + "/" + text.replace(/[\\/:*?"<>|]/g, "_") + ".md";
+                                        noteTitle = text;
+                                    }
                                 }
                             }
                         }
@@ -282,8 +524,11 @@ Item {
                             iconSource: isEditing ? FluentIcons.View : FluentIcons.Edit
                             iconSize: 16
                             onClicked: {
+                                if (isEditing) {
+                                    // Save when switching from edit to view
+                                    saveNote(notePath, contentArea.text, currentColor);
+                                }
                                 isEditing = !isEditing;
-                                saveData()
                             }
                         }
 
@@ -292,12 +537,14 @@ Item {
                             iconSize: 16
                             onClicked: colorPickerMenu.open()
                         }
+
                         FluIconButton {
                             iconSource: FluentIcons.ChromeClose
                             iconSize: 16
                             onClicked: {
-                                stackView.pop()
-                                saveData()
+                                saveNote(notePath, currentContent, currentColor);
+                                loadCurrentFolder();
+                                stackView.pop();
                             }
                         }
                     }
@@ -321,7 +568,7 @@ Item {
                         onLinkActivated: Qt.openUrlExternally(link)
                     }
 
-                    // Editview
+                    // Edit view
                     TextArea {
                         id: contentArea
                         visible: isEditing
@@ -337,7 +584,10 @@ Item {
 
                         Keys.onPressed: event => {
                             if ((event.key === Qt.Key_V) && (event.modifiers & Qt.ControlModifier)) {
-                                var dir = StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0] + "/EdgeGesture/images";
+                                var dir = currentFolderPath + "/images";
+                                if (!FileBridge.exists(dir)) {
+                                    FileBridge.createDirectory(dir);
+                                }
                                 var fileUrl = SystemBridge.saveClipboardImage(dir);
                                 if (fileUrl !== "") {
                                     insert(cursorPosition, "<img src=\"" + fileUrl + "\" width=\"320\" />");
@@ -352,7 +602,6 @@ Item {
 
                         onTextChanged: {
                             currentContent = text;
-                            notesModel.setProperty(noteIndex, "content", text);
                         }
                     }
                 }
@@ -430,8 +679,8 @@ Item {
                             iconSize: 18
                             Layout.alignment: Qt.AlignVCenter
                             onClicked: {
+                                saveNote(notePath, currentContent, currentColor);
                                 isEditing = false;
-                                saveData();
                             }
                         }
                     }
@@ -446,7 +695,7 @@ Item {
                 }
                 MenuItem {
                     text: "Blue"
-                    onTriggered: changeColor('#cf0078d4')
+                    onTriggered: changeColor('#0078d4')
                 }
                 MenuItem {
                     text: "Yellow"
@@ -464,13 +713,12 @@ Item {
 
             function changeColor(c) {
                 currentColor = c;
-                notesModel.setProperty(noteIndex, "color", c);
-                saveData();
+                saveNote(notePath, currentContent, c);
             }
         }
     }
 
-    // simple format button
+    // Simple format button
     component FormatBtn: Item {
         property string label: ""
         property int icon: 0
@@ -529,20 +777,88 @@ Item {
         nameFilters: ["Markdown Files (*.md)", "All Files (*)"]
         folder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
         onAccepted: {
-            var path = FileBridge.urlToPath(importDialog.file.toString());
-            var fileName = FileBridge.getFileName(path);
-            var content = FileBridge.readFile(path);
+            var srcPath = FileBridge.urlToPath(importDialog.file.toString());
+            var fileName = FileBridge.getBaseName(srcPath);
+            var content = FileBridge.readFile(srcPath);
 
             if (content !== "") {
-                notesModel.insert(0, {
-                    "type": "note",
-                    "title": fileName,
-                    "content": content,
-                    "color": "#0078D4",
-                    "date": "just now"
-                });
-                saveData();
+                // Copy file to current folder
+                var destPath = currentFolderPath + "/" + fileName + ".md";
+                FileBridge.writeFile(destPath, content);
+                loadCurrentFolder();
             }
+        }
+    }
+
+    // Folder picker dialog
+    FolderDialog {
+        id: folderDialog
+        title: "Select Notes Folder"
+        folder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
+        onAccepted: {
+            var newPath = FileBridge.urlToPath(folderDialog.folder.toString());
+            notesRootPath = newPath;
+            currentFolderPath = newPath;
+            folderStack = [];
+            loadCurrentFolder();
+        }
+    }
+
+    // New folder dialog
+    FluContentDialog {
+        id: newFolderDialog
+        title: "New Folder"
+        implicitWidth: 340
+
+        contentDelegate: Component {
+            ColumnLayout {
+                spacing: 10
+                FluText {
+                    text: "Enter a name for the new folder:"
+                }
+                FluTextBox {
+                    id: newFolderNameInput
+                    Layout.fillWidth: true
+                    placeholderText: "Folder name"
+                    Component.onCompleted: {
+                        newFolderDialog.folderNameInput = this;
+                    }
+                }
+            }
+        }
+        property var folderNameInput: null
+        negativeText: "Cancel"
+        positiveText: "Create"
+        buttonFlags: FluContentDialogType.NegativeButton | FluContentDialogType.PositiveButton
+        onOpened: root.requestInputMode(true)
+        onClosed: root.requestInputMode(false)
+        onPositiveClicked: {
+            if (folderNameInput && folderNameInput.text.trim() !== "") {
+                createFolder(folderNameInput.text.trim());
+                folderNameInput.text = "";
+            }
+        }
+    }
+
+    // Delete confirmation dialog
+    FluContentDialog {
+        id: deleteConfirmDialog
+        title: "Delete Item"
+
+        implicitWidth: 340
+
+        property string itemPath: ""
+        property string itemName: ""
+        property bool isFolder: false
+
+        message: "Are you sure you want to delete \"" + itemName + "\"?" + (isFolder ? "\n\nThis will delete all contents inside the folder." : "")
+        negativeText: "Cancel"
+        positiveText: "Delete"
+        buttonFlags: FluContentDialogType.NegativeButton | FluContentDialogType.PositiveButton
+        onOpened: root.requestInputMode(true)
+        onClosed: root.requestInputMode(false)
+        onPositiveClicked: {
+            deleteItem(itemPath, isFolder);
         }
     }
 }

@@ -31,9 +31,9 @@ Window {
     onVisibleChanged: {
         // Exclude when input flag change
         if (visible && !isSwitchingFlags) {
-            x = -width
-            opacity = 0
-            drawerEntryAnim.start()
+            x = -width;
+            opacity = 0;
+            drawerEntryAnim.start();
         }
     }
 
@@ -63,6 +63,22 @@ Window {
                     break;
                 }
             }
+        }
+    }
+
+    Connections {
+        target: ConfigBridge
+        function onEnabledPluginsChanged() {
+            if (swipeView.currentIndex >= ConfigBridge.enabledPlugins.length) {
+                swipeView.currentIndex = Math.max(0, ConfigBridge.enabledPlugins.length - 1);
+            }
+        }
+    }
+
+    Connections {
+        target: ConfigBridge.profileManager
+        function onCurrentProfileChanged() {
+            swipeView.currentIndex = 0;
         }
     }
 
@@ -99,14 +115,14 @@ Window {
                 z: 1000
 
                 onClicked: {
-                    containerWin.hide()
+                    containerWin.hide();
                 }
             }
 
             MouseArea {
                 anchors.fill: parent
                 onPressed: {
-                    containerWin.startSystemMove()
+                    containerWin.startSystemMove();
                 }
             }
         }
@@ -144,8 +160,10 @@ Window {
 
                     onLoaded: {
                         if (item) {
-                            if (item.closeRequested) item.closeRequested.connect(containerWin.close);
-                            if (item.appLaunched) item.appLaunched.connect(containerWin.close);
+                            if (item.closeRequested)
+                                item.closeRequested.connect(containerWin.close);
+                            if (item.appLaunched)
+                                item.appLaunched.connect(containerWin.close);
 
                             if (item.requestInputMode) {
                                 item.requestInputMode.connect(function (active) {
@@ -164,7 +182,8 @@ Window {
 
                                     containerWin.color = "transparent";
 
-                                    if(wasVisible) containerWin.show();
+                                    if (wasVisible)
+                                        containerWin.show();
 
                                     // [修改] 恢复标记
                                     containerWin.isSwitchingFlags = false;
@@ -188,9 +207,7 @@ Window {
                 width: 8
                 height: 8
                 radius: 4
-                color: index === indicator.currentIndex ?
-                       (FluTheme.dark ? "#FFFFFF" : "#000000") :
-                       (FluTheme.dark ? "#666666" : "#CCCCCC")
+                color: index === indicator.currentIndex ? (FluTheme.dark ? "#FFFFFF" : "#000000") : (FluTheme.dark ? "#666666" : "#CCCCCC")
                 opacity: index === indicator.currentIndex ? 0.9 : 0.5
             }
         }

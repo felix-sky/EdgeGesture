@@ -1,5 +1,10 @@
 #include "FileBridge.h"
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QDirIterator>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 FileBridge::FileBridge(QObject *parent) : QObject(parent) {}
 
@@ -93,4 +98,54 @@ QString FileBridge::urlToPath(const QString &urlString) {
 
 QString FileBridge::getAppPath() {
   return QCoreApplication::applicationDirPath();
+}
+
+QString FileBridge::listDirectory(const QString &path) {
+  QString localPath = normalizePath(path);
+  QDir dir(localPath);
+
+  if (!dir.exists()) {
+    qWarning() << "FileBridge: Directory does not exist:" << localPath;
+    return QStringLiteral("[]");
+  }
+
+  QJsonArray result;
+  dir.setFilter(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+  dir.setSorting(QDir::DirsFirst | QDir::Name);
+  QFileInfoList entries = dir.entryInfoList();
+
+  for (const QFileInfo &info : entries) {
+    QJsonObject obj;
+    obj.insert(QStringLiteral("name"), info.fileName());
+    obj.insert(QStringLiteral("path"), info.absoluteFilePath());
+    obj.insert(QStringLiteral("isDir"), info.isDir());
+    obj.insert(
+        QStringLiteral("modifiedDate"),
+        info.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm")));
+    obj.insert(QStringLiteral("baseName"), info.baseName());
+    result.append(obj);
+  }
+
+  return QString::fromUtf8(
+      QJsonDocument(result).toJson(QJsonDocument::Compact));
+}
+
+bool FileBridge::removeDirectory(const QString &path) {
+  QString localPath = normalizePath(path);
+  QDir dir(localPath);
+  if (!dir.exists()) {
+    return true;
+  }
+  return dir.removeRecursively();
+}
+
+bool FileBridge::isDirectory(const QString &path) {
+  QString localPath = normalizePath(path);
+  QFileInfo info(localPath);
+  return info.isDir();
+}
+
+QString FileBridge::getBaseName(const QString &path) {
+  QFileInfo fileInfo(normalizePath(path));
+  return fileInfo.baseName();
 }
