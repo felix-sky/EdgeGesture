@@ -1,14 +1,15 @@
-#include "utils/FileBridge.h"
-#include "utils/SystemBridge.h"
+#include "utils/ExeIconProvider.h"
 #include "utils/config/bridge/ConfigBridge.h"
+#include "utils/config/bridge/FileBridge.h"
+#include "utils/config/bridge/SystemBridge.h"
 #include "utils/config/services/Plugin.h"
+#include "utils/config/system/WindowsUtils.h"
 #include <FluentUI.h>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
-#include "utils/ExeIconProvider.h"
-#include "utils/config/system/WindowsUtils.h"
+
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -37,12 +38,9 @@ void applyMica(QWindow *window) {
   DwmExtendFrameIntoClientArea(hwnd, &margins);
 }
 
-
-
 int main(int argc, char *argv[]) {
   // Singleton check
-  HANDLE hMutex =
-      CreateMutexW(NULL, TRUE, L"EdgeGesture_SettingsUI_Singleton");
+  HANDLE hMutex = CreateMutexW(NULL, TRUE, L"EdgeGesture_SettingsUI_Singleton");
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
     HWND existingWindow = FindWindowW(NULL, L"EdgeGesture Config");
     if (existingWindow) {
@@ -51,7 +49,6 @@ int main(int argc, char *argv[]) {
     }
     return 0;
   }
-
 
   QGuiApplication app(argc, argv);
   app.setQuitOnLastWindowClosed(false);

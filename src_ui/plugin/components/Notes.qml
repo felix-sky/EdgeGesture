@@ -50,7 +50,9 @@ Item {
 
     // Navigate into a folder
     function navigateToFolder(folderPath) {
-        folderStack.push(currentFolderPath);
+        // folderStack.push(currentFolderPath);
+        // use concat to trigger property change
+        folderStack = folderStack.concat([currentFolderPath]);
         currentFolderPath = folderPath;
         loadCurrentFolder();
     }
@@ -58,7 +60,10 @@ Item {
     // Navigate back to parent folder
     function navigateBack() {
         if (folderStack.length > 0) {
-            currentFolderPath = folderStack.pop();
+            var stack = folderStack;
+            var path = stack.pop();
+            folderStack = stack; // Trigger variable change
+            currentFolderPath = path;
             loadCurrentFolder();
         }
     }
@@ -192,7 +197,7 @@ Item {
 
                     // Back button (when in subfolder)
                     FluIconButton {
-                        visible: folderStack.length > 0
+                        visible: folderStack.length > 0 ? true : false
                         iconSource: FluentIcons.Back
                         iconSize: 14
                         Layout.leftMargin: 4
@@ -297,105 +302,112 @@ Item {
                     topMargin: 10
                     bottomMargin: 10
 
-                    delegate: Rectangle {
-                        id: delegateRoot
-                        width: 320
+                    delegate: Item {
+                        id: wrapper
+                        width: listView.width
                         height: type === "folder" ? 56 : 80
-                        radius: 8
-                        x: (listView.width - width) / 2
-                        color: itemMouseArea.containsMouse ? (FluTheme.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05)) : (FluTheme.dark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.02))
 
-                        Behavior on color {
-                            ColorAnimation {
-                                duration: 150
-                            }
-                        }
-
-                        // MouseArea first (behind content)
-                        MouseArea {
-                            id: itemMouseArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            z: 0
-                            onClicked: {
-                                if (type === "folder") {
-                                    navigateToFolder(model.path);
-                                } else {
-                                    stackView.push(editorComponent, {
-                                        notePath: model.path,
-                                        noteTitle: model.title,
-                                        isEditing: false
-                                    });
-                                }
-                            }
-                        }
-
-                        // Color indicator for notes
                         Rectangle {
-                            visible: type === "note"
-                            width: 4
-                            height: parent.height - 16
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 8
-                            radius: 2
-                            color: model.color
-                            z: 1
-                        }
+                            id: delegateRoot
+                            width: 320
+                            height: parent.height
+                            radius: 8
+                            // anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.centerIn: parent
+                            color: itemMouseArea.containsMouse ? (FluTheme.dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05)) : (FluTheme.dark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.02))
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: type === "note" ? 20 : 12
-                            anchors.rightMargin: 8
-                            spacing: 10
-                            z: 1
-
-                            // Icon
-                            FluIcon {
-                                iconSource: type === "folder" ? FluentIcons.FolderHorizontal : FluentIcons.QuickNote
-                                iconSize: 20
-                                color: type === "folder" ? "#FFB900" : (FluTheme.dark ? "#ccc" : "#666")
-                                Layout.alignment: Qt.AlignVCenter
+                            Behavior on color {
+                                ColorAnimation {
+                                    duration: 150
+                                }
                             }
 
-                            // Title and date
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
-                                spacing: 2
+                            // MouseArea first (behind content)
+                            MouseArea {
+                                id: itemMouseArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                z: 0
+                                onClicked: {
+                                    if (type === "folder") {
+                                        navigateToFolder(model.path);
+                                    } else {
+                                        stackView.push(editorComponent, {
+                                            notePath: model.path,
+                                            noteTitle: model.title,
+                                            isEditing: false
+                                        });
+                                    }
+                                }
+                            }
 
-                                FluText {
-                                    text: title
-                                    font: FluTextStyle.Subtitle
-                                    elide: Text.ElideRight
+                            // Color indicator for notes
+                            Rectangle {
+                                visible: type === "note"
+                                width: 4
+                                height: parent.height - 16
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.leftMargin: 8
+                                radius: 2
+                                color: model.color
+                                z: 1
+                            }
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: type === "note" ? 20 : 12
+                                anchors.rightMargin: 8
+                                spacing: 10
+                                z: 1
+
+                                // Icon
+                                FluIcon {
+                                    iconSource: type === "folder" ? FluentIcons.FolderHorizontal : FluentIcons.QuickNote
+                                    iconSize: 20
+                                    color: type === "folder" ? "#FFB900" : (FluTheme.dark ? "#ccc" : "#666")
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
+                                // Title and date
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                }
+                                    Layout.alignment: Qt.AlignVCenter
+                                    spacing: 2
 
-                                FluText {
-                                    text: date
-                                    font.pixelSize: 11
-                                    color: FluTheme.dark ? "#777" : "#999"
-                                }
-                            }
+                                    FluText {
+                                        text: title
+                                        font: FluTextStyle.Subtitle
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
 
-                            // Delete button
-                            FluIconButton {
-                                iconSource: FluentIcons.Delete
-                                iconSize: 14
-                                opacity: itemMouseArea.containsMouse ? 1 : 0
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Behavior on opacity {
-                                    NumberAnimation {
-                                        duration: 150
+                                    FluText {
+                                        text: date
+                                        font.pixelSize: 11
+                                        color: FluTheme.dark ? "#777" : "#999"
                                     }
                                 }
 
-                                onClicked: {
-                                    deleteConfirmDialog.itemPath = model.path;
-                                    deleteConfirmDialog.itemName = model.title;
-                                    deleteConfirmDialog.isFolder = (type === "folder");
-                                    deleteConfirmDialog.open();
+                                // Delete button
+                                FluIconButton {
+                                    iconSource: FluentIcons.Delete
+                                    iconSize: 14
+                                    opacity: (itemMouseArea.containsMouse || hovered) ? 1 : 0
+                                    Layout.alignment: Qt.AlignVCenter
+
+                                    Behavior on opacity {
+                                        NumberAnimation {
+                                            duration: 150
+                                        }
+                                    }
+
+                                    onClicked: {
+                                        deleteConfirmDialog.itemPath = model.path;
+                                        deleteConfirmDialog.itemName = model.title;
+                                        deleteConfirmDialog.isFolder = (type === "folder");
+                                        deleteConfirmDialog.open();
+                                    }
                                 }
                             }
                         }
@@ -409,7 +421,7 @@ Item {
                         height: 120
                         color: "transparent"
 
-                        Column {
+                        ColumnLayout {
                             anchors.centerIn: parent
                             spacing: 10
 
@@ -417,21 +429,22 @@ Item {
                                 iconSource: FluentIcons.Edit
                                 iconSize: 48
                                 color: FluTheme.dark ? "#555" : "#999"
-                                anchors.horizontalCenter: parent.horizontalCenter
+                                Layout.alignment: Qt.AlignHCenter
                             }
 
                             FluText {
                                 text: "No notes yet"
                                 color: FluTheme.dark ? "#666" : "#888"
                                 font.pixelSize: 14
-                                anchors.horizontalCenter: parent.horizontalCenter
+                                Layout.alignment: Qt.AlignHCenter
                             }
 
                             FluText {
                                 text: "Tap + to create one"
                                 color: FluTheme.dark ? "#555" : "#999"
                                 font.pixelSize: 12
-                                anchors.horizontalCenter: parent.horizontalCenter
+                                // 2. 使用 Layout.alignment 代替 anchors
+                                Layout.alignment: Qt.AlignHCenter
                             }
                         }
                     }
