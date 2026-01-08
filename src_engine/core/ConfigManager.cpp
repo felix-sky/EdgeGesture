@@ -4,7 +4,6 @@
 #include <iomanip>
 #include <iostream>
 
-
 void ConfigManager::Load() {
   if (!std::filesystem::exists(m_configPath)) {
     // Create default
@@ -16,13 +15,13 @@ void ConfigManager::Load() {
                     {"short_swipe_threshold", 30.0}};
 
     j["left_handle"] = {{"enabled", true},
-                        {"width", 30},
-                        {"size", 100},
+                        {"width", 4},
+                        {"size", 80},
                         {"position", 50},
                         {"color", "#000000"}};
     j["right_handle"] = {{"enabled", true},
-                         {"width", 30},
-                         {"size", 100},
+                         {"width", 4},
+                         {"size", 80},
                          {"position", 50},
                          {"color", "#000000"}};
 

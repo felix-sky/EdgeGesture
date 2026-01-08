@@ -49,4 +49,18 @@ private:
   GestureEndCallback OnEnd;
 
   bool m_isDragging = false;
+
+  // --- Dynamic Adjustment Members ---
+  bool m_isHovering = false;
+  bool m_isSuppressed = false; // True if window is currently hidden due to hover
+
+  // Timer Identifiers
+  static const UINT_PTR TIMER_HOVER_CHECK = 1001;
+  static const UINT_PTR TIMER_RECOVERY = 1002;
+  static const UINT_PTR TIMER_WATCHDOG = 1003;
+
+  // Configuration Constants (Consider moving to ConfigManager later)
+  const UINT HOVER_THRESHOLD_MS = 400;    // Time before window hides
+  const UINT RECOVERY_DELAY_MS = 2000;    // Time before window reappears
+  const UINT WATCHDOG_INTERVAL_MS = 2000; // Watchdog check interval
 };

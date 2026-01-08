@@ -14,12 +14,16 @@ void InputWindow::Initialize() {
   wcex.hInstance = GetModuleHandle(NULL);
   wcex.lpszClassName = WINDOW_CLASS_NAME;
   wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-  // Background brush doesn't matter much for layered, but let's set it
   wcex.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
   RegisterClassExW(&wcex);
 
   CreateWindows();
   UpdateLayout();
+
+  // Start watchdog timer to restore windows if hidden by system/win+D
+  if (m_hwndLeft) {
+    SetTimer(m_hwndLeft, TIMER_WATCHDOG, WATCHDOG_INTERVAL_MS, nullptr);
+  }
 }
 
 void InputWindow::Shutdown() {
@@ -58,8 +62,8 @@ void InputWindow::CreateWindows() {
       WINDOW_CLASS_NAME, L"OHO_Right", WS_POPUP, 0, 0, 0, 0, nullptr, nullptr,
       GetModuleHandle(NULL), this);
 
-  // Make them "Input Opaque" but "Visually Transparent"
-  // Alpha = 1 (out of 255) is virtually invisible but captures input.
+  // Core logic is to create a visually transparent window that captures input
+  // however 0 will cause the window to disappear
   if (m_hwndLeft)
     SetLayeredWindowAttributes(m_hwndLeft, 0, 1, LWA_ALPHA);
   if (m_hwndRight)
@@ -71,12 +75,6 @@ void InputWindow::UpdateLayout() {
   int screenH = GetSystemMetrics(SM_CYSCREEN);
 
   AppConfig &cfg = ConfigManager::Get().Current();
-
-  // Create brushes if needed or just rely on background color?
-  // For simple preview, let's just make the window visible.
-  // Standard background is BLACK.
-  // If we want color matches, we'd need to handle WM_ERASEBKGND or WM_PAINT.
-  // Let's stick to simple semi-transparent black for alignment first.
 
   BYTE alpha = m_previewMode ? 100 : 1;
 
@@ -131,9 +129,7 @@ bool InputWindow::IsTouchInput() {
   if ((extraInfo & 0xFF515700) == 0xFF515700) {
     return true;
   }
-  // Also check standard flag (0x80) if needed, but the mask above is what
-  // InputHook used. Let's stick to the user's previous successful logic
-  // signature if possible.
+
   return false;
 }
 
@@ -151,39 +147,114 @@ LRESULT CALLBACK InputWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam,
 
   if (pThis) {
     switch (message) {
+
+    // --- 1. Gesture Initiation (The "Fast Action") ---
     case WM_LBUTTONDOWN: {
-      if (pThis->IsTouchInput()) {
-        pThis->m_isDragging = true;
-        SetCapture(hWnd);
-
-        bool isLeft = (hWnd == pThis->m_hwndLeft);
-
-        // Convert client to screen coordinates
-        POINT pt;
-        pt.x = (short)LOWORD(lParam);
-        pt.y = (short)HIWORD(lParam);
-        ClientToScreen(hWnd, &pt);
-
-        if (pThis->OnStart) {
-          pThis->OnStart(isLeft, pt.y);
-        }
-        return 0;
+      // If the user clicks immediately, we cancel any suppression logic
+      if (pThis->m_isHovering) {
+        KillTimer(hWnd, TIMER_HOVER_CHECK);
+        pThis->m_isHovering = false;
       }
-      break;
+
+      pThis->m_isDragging = true;
+      SetCapture(hWnd);
+
+      bool isLeft = (hWnd == pThis->m_hwndLeft);
+      POINT pt;
+      pt.x = (short)LOWORD(lParam);
+      pt.y = (short)HIWORD(lParam);
+      ClientToScreen(hWnd, &pt);
+
+      if (pThis->OnStart) {
+        pThis->OnStart(isLeft, pt.y);
+      }
+      return 0;
     }
+
+    //  Hover Detection、
     case WM_MOUSEMOVE: {
       if (pThis->m_isDragging) {
+        // Standard Dragging Logic
         POINT pt;
         pt.x = (short)LOWORD(lParam);
         pt.y = (short)HIWORD(lParam);
         ClientToScreen(hWnd, &pt);
-
-        if (pThis->OnUpdate) {
+        if (pThis->OnUpdate)
           pThis->OnUpdate(pt.x, pt.y);
+      } else {
+        // Logic: User is hovering but hasn't clicked yet
+        if (!pThis->m_isHovering) {
+          pThis->m_isHovering = true;
+
+          // Request notification when mouse leaves this window
+          TRACKMOUSEEVENT tme;
+          tme.cbSize = sizeof(TRACKMOUSEEVENT);
+          tme.dwFlags = TME_LEAVE;
+          tme.hwndTrack = hWnd;
+          TrackMouseEvent(&tme);
+
+          // Start the countdown: If user doesn't click in X ms, hide window
+          SetTimer(hWnd, TIMER_HOVER_CHECK, pThis->HOVER_THRESHOLD_MS, nullptr);
         }
       }
       break;
     }
+
+    // --- 3. Mouse Left the Window (Cancel Check) ---
+    case WM_MOUSELEAVE: {
+      pThis->m_isHovering = false;
+      KillTimer(hWnd, TIMER_HOVER_CHECK);
+      break;
+    }
+
+    // --- 4. Timer Logic (Suppression & Recovery) ---
+    case WM_TIMER: {
+      if (wParam == TIMER_HOVER_CHECK) {
+        // Timeout reached: User is staring at the edge/aiming for scrollbar
+        KillTimer(hWnd, TIMER_HOVER_CHECK);
+        pThis->m_isHovering = false;
+
+        // ACTION: Suppress the window (Hide it)
+        ShowWindow(hWnd, SW_HIDE);
+        pThis->m_isSuppressed = true;
+
+        // Schedule Recovery
+        SetTimer(hWnd, TIMER_RECOVERY, pThis->RECOVERY_DELAY_MS, nullptr);
+
+        std::cout << "[InputWindow] Auto-yield triggered (Suppressed)"
+                  << std::endl;
+      } else if (wParam == TIMER_RECOVERY) {
+        // Timeout reached: Bring the window back
+        KillTimer(hWnd, TIMER_RECOVERY);
+        pThis->m_isSuppressed = false;
+
+        // Restore visibility (No Activate to prevent stealing focus)
+        ShowWindow(hWnd, SW_SHOWNOACTIVATE);
+
+        std::cout << "[InputWindow] Window recovered" << std::endl;
+      } else if (wParam == TIMER_WATCHDOG) {
+        // Watchdog: Check if windows are unexpectedly hidden (e.g., by Win+D)
+        // Only restore if not intentionally suppressed by hover logic
+        AppConfig &cfg = ConfigManager::Get().Current();
+
+        if (!pThis->m_isSuppressed) {
+          if (pThis->m_hwndLeft && cfg.left.enabled &&
+              !IsWindowVisible(pThis->m_hwndLeft)) {
+            ShowWindow(pThis->m_hwndLeft, SW_SHOWNOACTIVATE);
+            std::cout << "[InputWindow] Watchdog restored left window"
+                      << std::endl;
+          }
+          if (pThis->m_hwndRight && cfg.right.enabled &&
+              !IsWindowVisible(pThis->m_hwndRight)) {
+            ShowWindow(pThis->m_hwndRight, SW_SHOWNOACTIVATE);
+            std::cout << "[InputWindow] Watchdog restored right window"
+                      << std::endl;
+          }
+        }
+      }
+      break;
+    }
+
     case WM_LBUTTONUP: {
       if (pThis->m_isDragging) {
         pThis->m_isDragging = false;
@@ -194,6 +265,7 @@ LRESULT CALLBACK InputWindow::WndProc(HWND hWnd, UINT message, WPARAM wParam,
       }
       break;
     }
+
     case WM_DISPLAYCHANGE: {
       pThis->UpdateLayout();
       break;
