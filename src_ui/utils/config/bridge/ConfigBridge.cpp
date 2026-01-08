@@ -2,6 +2,7 @@
 
 #include "../services/ActionRegistry.h"
 #include "../services/Plugin.h"
+#include "../services/ProfileManager.h"
 #include "../services/SettingsManager.h"
 #include "../system/EngineControl.h"
 #include "../system/SystemEventListener.h"
@@ -21,6 +22,13 @@ ConfigBridge::ConfigBridge(QObject *parent)
   m_engineControl = new EngineControl(this);
   m_actionRegistry = new ActionRegistry(this);
   m_settingsManager = new SettingsManager(this);
+  m_profileManager = new ProfileManager(this);
+
+  // Connect profile manager - reload config when profile switches
+  connect(m_profileManager, &ProfileManager::configSwitched, this, [this]() {
+    loadConfig();
+    m_engineControl->notifyChanges();
+  });
 
   // Initialize System Event Listener
   m_systemListener = new SystemEventListener(this);

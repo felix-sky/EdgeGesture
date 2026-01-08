@@ -8,6 +8,7 @@
 #include "../models/PhysicsSettings.h"
 #include "../services/ActionRegistry.h"
 #include "../services/Plugin.h"
+#include "../services/ProfileManager.h"
 #include "../system/SystemEventListener.h"
 
 // Forward declarations for other classes
@@ -21,6 +22,7 @@ class ConfigBridge : public QObject {
   // Sub-components
   Q_PROPERTY(Plugin *plugin READ plugin CONSTANT)
   Q_PROPERTY(ActionRegistry *actionRegistry READ actionRegistry CONSTANT)
+  Q_PROPERTY(ProfileManager *profileManager READ profileManager CONSTANT)
 
   // Config Groups
   Q_PROPERTY(PhysicsSettings *physics READ physics CONSTANT)
@@ -42,6 +44,7 @@ public:
   // Accessors for QML
   Plugin *plugin() const { return m_plugin; }
   ActionRegistry *actionRegistry() const { return m_actionRegistry; }
+  ProfileManager *profileManager() const { return m_profileManager; }
 
   PhysicsSettings *physics() const { return m_physics; }
   HandleSettings *leftHandle() const { return m_leftHandle; }
@@ -81,6 +84,7 @@ private:
   // Sub-objects
   Plugin *m_plugin;
   ActionRegistry *m_actionRegistry;
+  ProfileManager *m_profileManager;
 
   PhysicsSettings *m_physics;
   HandleSettings *m_leftHandle;
