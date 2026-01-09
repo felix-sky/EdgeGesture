@@ -38,9 +38,53 @@ bool NotesFileHandler::saveNote(const QString &filePath, const QString &content,
                                 const QString &color) {
   QString normalizedPath = normalizePath(filePath);
 
-  // Build content with frontmatter
-  QString fileContent = QStringLiteral("---\ncolor: ") + color +
-                        QStringLiteral("\n---\n") + content;
+  // Read existing file to preserve frontmatter fields
+  QString existingTags;
+  QString existingPinned;
+
+  QFile readFile(normalizedPath);
+  if (readFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QTextStream in(&readFile);
+    QString existingContent = in.readAll();
+    readFile.close();
+
+    // Parse existing frontmatter to preserve tags and pinned
+    if (existingContent.startsWith(QLatin1String("---"))) {
+      int endIndex = existingContent.indexOf(QLatin1String("---"), 3);
+      if (endIndex > 0) {
+        QString frontmatter = existingContent.mid(3, endIndex - 3);
+
+        // Extract tags
+        QRegularExpression tagsRegex(
+            QStringLiteral("tags:\\s*\\[([^\\]]*)\\]"));
+        QRegularExpressionMatch tagsMatch = tagsRegex.match(frontmatter);
+        if (tagsMatch.hasMatch()) {
+          existingTags = QStringLiteral("tags: [") + tagsMatch.captured(1) +
+                         QStringLiteral("]\n");
+        }
+
+        // Extract pinned
+        QRegularExpression pinnedRegex(
+            QStringLiteral("pinned:\\s*(true|false)"));
+        QRegularExpressionMatch pinnedMatch = pinnedRegex.match(frontmatter);
+        if (pinnedMatch.hasMatch()) {
+          existingPinned = QStringLiteral("pinned: ") +
+                           pinnedMatch.captured(1) + QStringLiteral("\n");
+        }
+      }
+    }
+  }
+
+  // Build content with frontmatter, preserving existing fields
+  QString fileContent =
+      QStringLiteral("---\ncolor: ") + color + QStringLiteral("\n");
+  if (!existingTags.isEmpty()) {
+    fileContent += existingTags;
+  }
+  if (!existingPinned.isEmpty()) {
+    fileContent += existingPinned;
+  }
+  fileContent += QStringLiteral("---\n") + content;
 
   QFile file(normalizedPath);
   if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -199,4 +243,116 @@ QString NotesFileHandler::normalizePath(const QString &path) {
     result = QUrl(result).toLocalFile();
   }
   return result;
+}
+
+bool NotesFileHandler::updateFrontmatter(const QString &path,
+                                         const QString &key,
+                                         const QVariant &value) {
+  QString normalizedPath = normalizePath(path);
+
+  QFile file(normalizedPath);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    qWarning()
+        << "NotesFileHandler: Failed to read file for frontmatter update:"
+        << normalizedPath;
+    return false;
+  }
+
+  QTextStream in(&file);
+  QString content = in.readAll();
+  file.close();
+
+  // Format the value
+  QString valueStr;
+  if (value.typeId() == QMetaType::Bool) {
+    valueStr =
+        value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
+  } else if (value.typeId() == QMetaType::QStringList) {
+    QStringList list = value.toStringList();
+    valueStr = QStringLiteral("[") + list.join(QStringLiteral(", ")) +
+               QStringLiteral("]");
+  } else {
+    valueStr = value.toString();
+  }
+
+  // Check if frontmatter exists
+  if (content.startsWith(QLatin1String("---"))) {
+    int endIdx = content.indexOf(QLatin1String("---"), 3);
+    if (endIdx > 0) {
+      QString frontmatter = content.mid(3, endIdx - 3);
+      QString afterFrontmatter = content.mid(endIdx);
+
+      // Check if key already exists
+      QRegularExpression keyRegex(key + QStringLiteral(":\\s*[^\\n]+"));
+      if (keyRegex.match(frontmatter).hasMatch()) {
+        // Replace existing key
+        frontmatter.replace(keyRegex, key + QStringLiteral(": ") + valueStr);
+      } else {
+        // Add new key before closing ---
+        frontmatter +=
+            key + QStringLiteral(": ") + valueStr + QStringLiteral("\n");
+      }
+
+      content = QStringLiteral("---") + frontmatter + afterFrontmatter;
+    }
+  } else {
+    // No frontmatter, create one
+    content = QStringLiteral("---\n") + key + QStringLiteral(": ") + valueStr +
+              QStringLiteral("\n---\n") + content;
+  }
+
+  // Write back
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    qWarning() << "NotesFileHandler: Failed to write frontmatter update:"
+               << normalizedPath;
+    return false;
+  }
+
+  QTextStream out(&file);
+  out << content;
+  file.close();
+
+  return true;
+}
+
+QStringList NotesFileHandler::getTags(const QString &path) {
+  QString normalizedPath = normalizePath(path);
+  QStringList tags;
+
+  QFile file(normalizedPath);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    return tags;
+  }
+
+  // Read only header for efficiency
+  char buffer[1024];
+  qint64 bytesRead = file.read(buffer, sizeof(buffer));
+  QString header = QString::fromUtf8(buffer, static_cast<int>(bytesRead));
+  file.close();
+
+  if (header.startsWith(QLatin1String("---"))) {
+    int endIdx = header.indexOf(QLatin1String("---"), 3);
+    if (endIdx > 0) {
+      QString frontmatter = header.mid(3, endIdx - 3);
+
+      // Match tags: [tag1, tag2, tag3]
+      QRegularExpression tagsRegex(QStringLiteral("tags:\\s*\\[([^\\]]+)\\]"));
+      QRegularExpressionMatch match = tagsRegex.match(frontmatter);
+
+      if (match.hasMatch()) {
+        QString tagsStr = match.captured(1);
+        const QStringList rawTags = tagsStr.split(QLatin1Char(','));
+        for (const QString &tag : rawTags) {
+          QString cleaned = tag.trimmed();
+          cleaned.remove(QLatin1Char('"'));
+          cleaned.remove(QLatin1Char('\''));
+          if (!cleaned.isEmpty()) {
+            tags.append(cleaned);
+          }
+        }
+      }
+    }
+  }
+
+  return tags;
 }

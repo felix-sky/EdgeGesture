@@ -95,6 +95,23 @@ public:
    */
   Q_INVOKABLE QString getBaseName(const QString &path);
 
+  /**
+   * @brief Updates a single frontmatter key-value pair.
+   * @param path The path to the note file.
+   * @param key The frontmatter key to update.
+   * @param value The new value.
+   * @return True if successful.
+   */
+  Q_INVOKABLE bool updateFrontmatter(const QString &path, const QString &key,
+                                     const QVariant &value);
+
+  /**
+   * @brief Gets the tags from a note's frontmatter.
+   * @param path The path to the note file.
+   * @return List of tags.
+   */
+  Q_INVOKABLE QStringList getTags(const QString &path);
+
 private:
   QString sanitizeFileName(const QString &name);
   QString normalizePath(const QString &path);

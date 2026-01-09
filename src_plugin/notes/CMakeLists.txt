@@ -20,6 +20,7 @@ qt_add_qml_module(notesplugin
     SOURCES
         NotesModel.h NotesModel.cpp
         NotesFileHandler.h NotesFileHandler.cpp
+        NotesIndex.h NotesIndex.cpp
 )
 
 target_link_libraries(notesplugin PRIVATE
