@@ -107,4 +107,5 @@ add_custom_command(TARGET SettingsUI POST_BUILD
     COMMENT "Copying UI plugins to build directory..."
 )
 
-
+# Build plugin DLLs
+add_subdirectory(src_plugin)
