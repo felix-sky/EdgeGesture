@@ -1,5 +1,6 @@
 #include "NotesFileHandler.h"
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -226,7 +227,7 @@ QString NotesFileHandler::urlToPath(const QString &urlString) {
 
 QString NotesFileHandler::getBaseName(const QString &path) {
   QFileInfo info(normalizePath(path));
-  return info.baseName();
+  return info.completeBaseName();
 }
 
 QString NotesFileHandler::sanitizeFileName(const QString &name) {
@@ -355,4 +356,54 @@ QStringList NotesFileHandler::getTags(const QString &path) {
   }
 
   return tags;
+}
+
+QString NotesFileHandler::findImage(const QString &imageName,
+                                    const QString &notePath,
+                                    const QString &rootPath) {
+  QString normalizedRoot = normalizePath(rootPath);
+  QString normalizedNotePath = normalizePath(notePath);
+
+  // Get the folder containing the note
+  QFileInfo noteInfo(normalizedNotePath);
+  QString noteFolder = noteInfo.absolutePath();
+
+  // List of places to check (in order of preference)
+  QStringList searchPaths;
+
+  // 1. Same folder as the note
+  searchPaths << noteFolder + QStringLiteral("/") + imageName;
+
+  // 2. Attachments folder (common Obsidian pattern)
+  searchPaths << noteFolder + QStringLiteral("/attachments/") + imageName;
+  searchPaths << normalizedRoot + QStringLiteral("/attachments/") + imageName;
+
+  // 3. Images folder (common pattern)
+  searchPaths << noteFolder + QStringLiteral("/images/") + imageName;
+  searchPaths << normalizedRoot + QStringLiteral("/images/") + imageName;
+
+  // 4. Assets folder (another common pattern)
+  searchPaths << noteFolder + QStringLiteral("/assets/") + imageName;
+  searchPaths << normalizedRoot + QStringLiteral("/assets/") + imageName;
+
+  // 5. Root folder
+  searchPaths << normalizedRoot + QStringLiteral("/") + imageName;
+
+  // Check each path
+  for (const QString &path : std::as_const(searchPaths)) {
+    if (QFile::exists(path)) {
+      return QDir::cleanPath(path);
+    }
+  }
+
+  // If not found in common locations, do a recursive search (expensive but
+  // thorough)
+  QDirIterator it(normalizedRoot, QStringList() << imageName, QDir::Files,
+                  QDirIterator::Subdirectories);
+  if (it.hasNext()) {
+    return QDir::cleanPath(it.next());
+  }
+
+  // Not found
+  return QString();
 }

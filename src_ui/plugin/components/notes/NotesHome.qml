@@ -95,6 +95,8 @@ Item {
                 font: FluTextStyle.Title
                 Layout.alignment: Qt.AlignVCenter
                 elide: Text.ElideMiddle
+                Layout.maximumWidth: 130
+                clip: true
             }
 
             // Back button (when in subfolder)

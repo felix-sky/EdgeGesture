@@ -395,7 +395,7 @@ QString NotesIndex::findPathByTitle(const QString &title) const {
 NoteMetadata NotesIndex::parseFileHeader(const QString &path) {
   NoteMetadata meta;
   meta.filePath = path;
-  meta.title = QFileInfo(path).baseName();
+  meta.title = QFileInfo(path).completeBaseName();
   meta.lastModified = QFileInfo(path).lastModified();
   meta.isFolder = false;
   meta.color = QStringLiteral("#624a73"); // Default

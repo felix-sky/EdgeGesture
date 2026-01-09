@@ -345,7 +345,7 @@ void NotesModel::searchContent(const QString &query) {
           NoteItem item;
           item.type = QStringLiteral("note");
           item.path = filePath;
-          item.title = info.baseName();
+          item.title = info.completeBaseName();
           item.date =
               info.lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm"));
           item.lastModified = info.lastModified();

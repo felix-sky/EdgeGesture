@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Controls 2.15
+import Qt.labs.platform 1.1
 import FluentUI 1.0
 import EdgeGesture.Notes 1.0
 
@@ -50,14 +51,16 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: 60
 
+            // title
             Rectangle {
                 height: 32
-                width: 150
+                width: 180
                 radius: 16
                 color: Qt.rgba(1, 1, 1, 0.2)
                 anchors.left: parent.left
                 anchors.leftMargin: 15
                 anchors.verticalCenter: parent.verticalCenter
+
 
                 RowLayout {
                     anchors.fill: parent
@@ -72,6 +75,7 @@ Item {
                         font.pixelSize: 13
                         selectByMouse: true
                         Layout.fillWidth: true
+                        clip: true
                         onEditingFinished: {
                             if (text !== noteTitle && text.trim() !== "") {
                                 var newPath = notesFileHandler.renameItem(notePath, text, false);
@@ -141,28 +145,65 @@ Item {
             }
         }
 
-        ScrollView {
+        Flickable {
+            id: contentFlickable
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.leftMargin: 15
             Layout.rightMargin: 15
             contentWidth: 320
+            contentHeight: isEditing ? contentArea.implicitHeight : viewText.implicitHeight
             clip: true
-            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.VerticalFlick
 
             Text {
                 id: viewText
                 visible: !isEditing
                 width: 320
-                // Convert WikiLinks to markdown links for proper rendering
-                text: convertWikiLinks(currentContent)
+                // Convert WikiLinks and Obsidian images for proper rendering
+                text: convertObsidianContent(currentContent)
                 color: "#FFFFFF"
                 font.pixelSize: 16
                 wrapMode: Text.Wrap
                 textFormat: Text.MarkdownText
                 linkColor: "#88CCFF"
 
+                // Get the notes root folder from the note path
+                function getNotesRoot() {
+                    if (!editorPage.notePath)
+                        return "";
+                    // Navigate up to find the root (look for common patterns or use model's root)
+                    if (editorPage.notesModel && editorPage.notesModel.rootPath) {
+                        return editorPage.notesModel.rootPath;
+                    }
+                    return "";
+                }
+
+                // Convert Obsidian image embeds ![[image.png]] to HTML img tags
+                function convertObsidianImages(content) {
+                    var root = getNotesRoot();
+                    var currentNotePath = editorPage.notePath;
+
+                    // Match ![[filename]] pattern (image embeds in Obsidian)
+                    return content.replace(/!\[\[([^\]]+)\]\]/g, function (match, imageName) {
+                        // Use C++ findImage method for efficient search with recursive fallback
+                        if (editorPage.notesFileHandler) {
+                            var foundPath = editorPage.notesFileHandler.findImage(imageName, currentNotePath, root);
+                            if (foundPath !== "") {
+                                // Found the image! Return an img tag with file:// protocol
+                                var normalizedPath = foundPath.replace(/\\/g, "/");
+                                return '<img src="file:///' + normalizedPath + '" width="320" />';
+                            }
+                        }
+
+                        // Image not found - return a placeholder
+                        console.warn("NotesEditor: Image not found: " + imageName);
+                        return '<span style="color: #ff6b6b;">[Image not found: ' + imageName + ']</span>';
+                    });
+                }
+
+                // Convert WikiLinks [[Title]] to clickable markdown links
                 function convertWikiLinks(content) {
                     // Convert [[Title]] to markdown links with note:// protocol, URL encoding the title
                     return content.replace(/\[\[([^\]]+)\]\]/g, function (match, title) {
@@ -170,11 +211,23 @@ Item {
                     });
                 }
 
+                // Main conversion function - applies all Obsidian syntax conversions
+                function convertObsidianContent(content) {
+                    if (!content)
+                        return "";
+                    var result = content;
+                    // First convert images (before WikiLinks to avoid conflicts)
+                    result = convertObsidianImages(result);
+                    // Then convert WikiLinks
+                    result = convertWikiLinks(result);
+                    return result;
+                }
+
                 onLinkActivated: link => {
                     if (link.startsWith("note://")) {
                         var encodedTitle = link.replace("note://", "");
                         var title = decodeURIComponent(encodedTitle);
-                        var linkedPath = notesModel.findPathByTitle(title);
+                        var linkedPath = editorPage.notesModel.findPathByTitle(title);
                         if (linkedPath !== "") {
                             editorPage.linkOpened(linkedPath, title);
                         }
@@ -201,9 +254,9 @@ Item {
 
                 Keys.onPressed: event => {
                     if ((event.key === Qt.Key_V) && (event.modifiers & Qt.ControlModifier)) {
-                        var dir = notesModel.currentPath + "/images";
-                        if (!notesFileHandler.exists(dir)) {
-                            notesFileHandler.createFolder(notesModel.currentPath, "images");
+                        var dir = editorPage.notesModel.currentPath + "/images";
+                        if (!editorPage.notesFileHandler.exists(dir)) {
+                            editorPage.notesFileHandler.createFolder(editorPage.notesModel.currentPath, "images");
                         }
                         var fileUrl = SystemBridge.saveClipboardImage(dir);
                         if (fileUrl !== "") {
@@ -310,32 +363,24 @@ Item {
         width: 150
         x: parent.width - 160
         y: 50
-        background: Rectangle {
-            implicitWidth: 150
-            implicitHeight: 36
-            color: Qt.rgba(252 / 255, 252 / 255, 252 / 255, 1)
-            border.color: FluTheme.dark ? Qt.rgba(26 / 255, 26 / 255, 26 / 255, 1) : Qt.rgba(191 / 255, 191 / 255, 191 / 255, 1)
-            border.width: 1
-            radius: 5
-            FluShadow {}
-        }
-        MenuItem {
+
+        FluMenuItem {
             text: "Purple"
             onTriggered: changeColor("#624a73")
         }
-        MenuItem {
+        FluMenuItem {
             text: "Blue"
             onTriggered: changeColor('#0078d4')
         }
-        MenuItem {
+        FluMenuItem {
             text: "Yellow"
             onTriggered: changeColor("#c89100")
         }
-        MenuItem {
+        FluMenuItem {
             text: "Green"
             onTriggered: changeColor("#107C10")
         }
-        MenuItem {
+        FluMenuItem {
             text: "Red"
             onTriggered: changeColor("#b40d1b")
         }

@@ -112,6 +112,20 @@ public:
    */
   Q_INVOKABLE QStringList getTags(const QString &path);
 
+  /**
+   * @brief Finds an image file within the notes vault.
+   * Searches in common Obsidian locations: same folder, attachments, images
+   * subfolders.
+   * @param imageName The image filename (e.g., "Pasted image
+   * 20260101211933.png").
+   * @param notePath The path to the note containing the image reference.
+   * @param rootPath The root path of the notes vault.
+   * @return The full path to the image if found, or empty string if not found.
+   */
+  Q_INVOKABLE QString findImage(const QString &imageName,
+                                const QString &notePath,
+                                const QString &rootPath);
+
 private:
   QString sanitizeFileName(const QString &name);
   QString normalizePath(const QString &path);
