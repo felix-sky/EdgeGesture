@@ -38,22 +38,32 @@ NotesIndex::~NotesIndex() {
 }
 
 void NotesIndex::setRootPath(const QString &path) {
+  qDebug() << "NotesIndex::setRootPath called with:" << path;
   QString normalizedPath = path;
   if (normalizedPath.startsWith(QLatin1String("file:///"))) {
     normalizedPath = QUrl(normalizedPath).toLocalFile();
   }
+  qDebug() << "NotesIndex::setRootPath normalized to:" << normalizedPath;
+  qDebug() << "NotesIndex::setRootPath current m_rootPath:" << m_rootPath;
 
   if (m_rootPath != normalizedPath) {
     m_rootPath = normalizedPath;
+    qDebug() << "NotesIndex::setRootPath path changed, calling rebuildIndex";
     rebuildIndex();
+  } else {
+    qDebug() << "NotesIndex::setRootPath path unchanged, skipping rebuild";
   }
 }
 
 void NotesIndex::rebuildIndex() {
-  if (m_rootPath.isEmpty())
+  qDebug() << "NotesIndex::rebuildIndex called, m_rootPath:" << m_rootPath;
+  if (m_rootPath.isEmpty()) {
+    qDebug() << "NotesIndex::rebuildIndex - rootPath is empty, returning";
     return;
+  }
 
   if (m_watcher->isRunning()) {
+    qDebug() << "NotesIndex::rebuildIndex - canceling previous scan";
     m_watcher->cancel();
     m_watcher->waitForFinished();
   }
@@ -64,7 +74,9 @@ void NotesIndex::rebuildIndex() {
 
   // Count files first for progress
   QString rootPath = m_rootPath;
+  qDebug() << "NotesIndex::rebuildIndex - starting async scan for:" << rootPath;
   m_watcher->setFuture(QtConcurrent::run([rootPath]() {
+    qDebug() << "NotesIndex: Async scan starting in thread for:" << rootPath;
     QVector<NoteMetadata> results;
     QDirIterator it(rootPath, {"*.md"}, QDir::Files,
                     QDirIterator::Subdirectories);
@@ -90,17 +102,24 @@ void NotesIndex::rebuildIndex() {
       results.append(meta);
     }
 
+    qDebug() << "NotesIndex: Async scan completed, found" << results.size()
+             << "items";
     return results;
   }));
 }
 
 void NotesIndex::onScanFinished() {
+  qDebug() << "NotesIndex::onScanFinished called";
   QVector<NoteMetadata> results = m_watcher->result();
+  qDebug() << "NotesIndex::onScanFinished - processing" << results.size()
+           << "results";
   processIndexResults(results);
 
   m_indexing = false;
   emit indexingChanged();
   emit indexReady();
+  qDebug() << "NotesIndex::onScanFinished - index ready, titleToPath size:"
+           << m_titleToPath.size();
 }
 
 void NotesIndex::processIndexResults(const QVector<NoteMetadata> &results) {
@@ -388,7 +407,28 @@ QStringList NotesIndex::getAllTags() const {
 }
 
 QString NotesIndex::findPathByTitle(const QString &title) const {
-  return m_titleToPath.value(title);
+  // If called on a non-singleton instance (QML may create extra instances),
+  // delegate to the actual singleton
+  if (this != s_instance && s_instance != nullptr) {
+    qDebug() << "NotesIndex::findPathByTitle - delegating to singleton";
+    return s_instance->findPathByTitle(title);
+  }
+
+  qDebug() << "NotesIndex::findPathByTitle looking for:" << title;
+  qDebug() << "NotesIndex::findPathByTitle index size:" << m_titleToPath.size();
+
+  // Debug: print all titles in index
+  if (!m_titleToPath.contains(title)) {
+    qDebug() << "NotesIndex: Title not found. Available titles:";
+    for (auto it = m_titleToPath.constBegin(); it != m_titleToPath.constEnd();
+         ++it) {
+      qDebug() << "  -" << it.key() << "->" << it.value();
+    }
+  }
+
+  QString result = m_titleToPath.value(title);
+  qDebug() << "NotesIndex::findPathByTitle result:" << result;
+  return result;
 }
 
 // Static parsing methods

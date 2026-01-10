@@ -18,12 +18,15 @@ Item {
     property var notesModel: null
     property string vaultRootPath: "" // Root of the notes vault for image search
 
+    property int pendingFocusIndex: -1 // Track which block should get focus on load
+
     property string currentColor: "#624a73"
 
     signal inputModeRequested(bool active)
     signal closeRequested
     signal addTagRequested(string path)
     signal linkOpened(string path, string title)
+    signal requestBlockEdit(int index)
 
     NoteBlockModel {
         id: blockModel
@@ -47,6 +50,21 @@ Item {
             // noteData.content is the raw markdown string
             blockModel.loadMarkdown(noteData.content);
             currentColor = noteData.color;
+
+            // Ensure we have at least one block for editing if empty
+            if (noteData.content.trim() === "") {
+            }
+        }
+    }
+
+    Connections {
+        target: blockModel
+        function onLoadingChanged() {
+            if (!blockModel.loading && blockModel.rowCount() === 0) {
+                blockModel.insertBlock(0, "paragraph", "");
+                // Optional: Auto-focus first block
+                editorPage.requestBlockEdit(0);
+            }
         }
     }
 
@@ -188,15 +206,6 @@ Item {
                     return p.substring(0, p.lastIndexOf("/"));
                 }
 
-                onLoaded: {
-                    if (item) {
-                        // Manually assign the callback function to avoid QML Binding type issues with functions
-                        item.onLinkActivatedCallback = function (link) {
-                            editorPage.linkOpened(link, "");
-                        };
-                    }
-                }
-
                 Binding {
                     target: delegateLoader.item
                     property: "folderPath"
@@ -241,15 +250,81 @@ Item {
 
                 Binding {
                     target: delegateLoader.item
-                    property: "vaultRootPath" // Pass vault root for image search
+                    property: "vaultRootPath"
                     value: vaultRootPath
                     when: delegateLoader.status === Loader.Ready
+                }
+
+                Binding {
+                    target: delegateLoader.item
+                    property: "editor" // Pass editor reference
+                    value: editorPage
+                    when: delegateLoader.status === Loader.Ready
+                }
+
+                Binding {
+                    target: delegateLoader.item
+                    property: "type"
+                    value: model.type
+                    when: delegateLoader.status === Loader.Ready
+                }
+
+                Binding {
+                    target: delegateLoader.item
+                    property: "level"
+                    value: model.level
+                    when: delegateLoader.status === Loader.Ready
+                }
+
+                Connections {
+                    target: editorPage
+                    function onRequestBlockEdit(idx) {
+                        if (idx === index) {
+                            // Ensure the ListView follows the focus
+                            listView.currentIndex = idx;
+
+                            if (delegateLoader.item) {
+                                delegateLoader.item.isEditing = true;
+                            } else {
+                                // Delegate not ready yet (e.g. still created), but wait,
+                                // ListView reuses delegates. If idx is out of view, it won't exist.
+                                // If it's about to be created, we need to store the intent
+                                editorPage.pendingFocusIndex = idx;
+                            }
+                        }
+                    }
+                    ignoreUnknownSignals: true
+                }
+
+                onLoaded: {
+                    if (item) {
+                        // Check if we have a pending focus for this index
+                        if (index === editorPage.pendingFocusIndex) {
+                            listView.currentIndex = index; // Sync ListView index
+                            item.isEditing = true;
+                            editorPage.pendingFocusIndex = -1;
+                        }
+
+                        // Manually assign the callback function to avoid QML Binding type issues with functions
+                        item.onLinkActivatedCallback = function (link) {
+                            // Extract title from path (remove directory and .md extension)
+                            var title = link.replace(/\\/g, "/");
+                            var lastSlash = title.lastIndexOf("/");
+                            if (lastSlash >= 0) {
+                                title = title.substring(lastSlash + 1);
+                            }
+                            if (title.endsWith(".md")) {
+                                title = title.substring(0, title.length - 3);
+                            }
+                            editorPage.linkOpened(link, title);
+                        };
+                    }
                 }
 
                 source: {
                     switch (model.type) {
                     case "heading":
-                        return "blocks/HeadingBlock.qml";
+                        return "blocks/ParagraphBlock.qml"; // Unified Heading support
                     case "code":
                         return "blocks/CodeBlock.qml";
                     case "quote":

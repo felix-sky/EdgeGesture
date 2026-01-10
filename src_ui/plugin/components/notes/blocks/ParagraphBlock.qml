@@ -11,12 +11,40 @@ Item {
     property bool isEditing: false
     property string folderPath: ""
     property var noteListView: null
+    property var editor: null // Reference to NotesEditor
     property var onLinkActivatedCallback: null // Injected by NotesEditor
     property var notesIndex: null
     property var notesFileHandler: null // For image search
     property string notePath: "" // Current note path for image context
     property string vaultRootPath: "" // Root of the vault for image search
     property int blockIndex: -1
+    property string type: model.type ? model.type : "paragraph"
+    property int level: model.level !== undefined ? model.level : 1
+
+    // Helper to determine font size
+    function getFontSize() {
+        if (type === "heading") {
+            switch (level) {
+            case 1:
+                return 32;
+            case 2:
+                return 24;
+            case 3:
+                return 20;
+            case 4:
+                return 18;
+            default:
+                return 16;
+            }
+        }
+        return 16;
+    }
+
+    function getFontWeight() {
+        if (type === "heading")
+            return Font.Bold;
+        return Font.Normal;
+    }
 
     // Sync content when model changes
     onContentChanged: {
@@ -28,6 +56,11 @@ Item {
         width: parent.width
         sourceComponent: isEditing ? editorComp : viewerComp
     }
+
+    // Add mouse area to capture clicks when not editing but empty?
+    // Actually the viewerComp handles clicks.
+    // If content is empty, viewerComp might have 0 height.
+    // Ensure minimum height in Item.
 
     Component {
         id: viewerComp
@@ -91,7 +124,8 @@ Item {
             }
             wrapMode: Text.Wrap
             color: FluTheme.dark ? "#cccccc" : "#222222"
-            font.pixelSize: 16
+            font.pixelSize: getFontSize()
+            font.weight: getFontWeight()
             font.family: "Segoe UI"
             textFormat: Text.RichText  // Changed to RichText for HTML img width support
             linkColor: FluTheme.primaryColor
@@ -103,31 +137,67 @@ Item {
             onLinkActivated: link => {
                 // decode URI component if needed
                 var decodedLink = decodeURIComponent(link);
+                console.log("WikiLink: Raw link:", link);
+                console.log("WikiLink: Decoded link:", decodedLink);
 
-                // 1. Try to find note by title globally
+                // 1. Check if it's an external URL (http/https/mailto etc.) - handle first
+                if (decodedLink.startsWith("http://") || decodedLink.startsWith("https://") || decodedLink.startsWith("mailto:") || decodedLink.startsWith("file://")) {
+                    console.log("WikiLink: Opening as external URL");
+                    Qt.openUrlExternally(link);
+                    return;
+                }
+
+                // 2. Try to find note by title globally (searches entire vault including subfolders)
                 var globalPath = "";
+                console.log("WikiLink: notesIndex available:", root.notesIndex ? "yes" : "no");
                 if (root.notesIndex) {
                     globalPath = root.notesIndex.findPathByTitle(decodedLink);
+                    console.log("WikiLink: findPathByTitle result:", globalPath);
                 }
 
                 if (globalPath !== "") {
+                    console.log("WikiLink: Found in index, opening:", globalPath);
                     if (root.onLinkActivatedCallback) {
                         root.onLinkActivatedCallback(globalPath);
                     }
                     return;
                 }
 
-                // 2. Try relative path (Classic .md link)
+                // 3. Try relative path (Classic .md link)
                 if (decodedLink.endsWith(".md")) {
                     var p = root.folderPath + "/" + decodedLink;
+                    console.log("WikiLink: Using .md relative path:", p);
                     if (root.onLinkActivatedCallback) {
                         root.onLinkActivatedCallback(p);
                     }
                     return;
                 }
 
-                // 3. Fallback: External browser
-                Qt.openUrlExternally(link);
+                // 4. Wiki link not in index - check if file exists at local path
+                var wikiPath = root.folderPath + "/" + decodedLink + ".md";
+                console.log("WikiLink: Checking local path:", wikiPath);
+                console.log("WikiLink: notesFileHandler available:", root.notesFileHandler ? "yes" : "no");
+                if (root.notesFileHandler && root.notesFileHandler.exists(wikiPath)) {
+                    console.log("WikiLink: File exists at local path, opening");
+                    if (root.onLinkActivatedCallback) {
+                        root.onLinkActivatedCallback(wikiPath);
+                    }
+                    return;
+                }
+
+                // 5. Note doesn't exist anywhere - create a new note with this title
+                console.log("WikiLink: Note not found, creating new note in:", root.folderPath);
+                if (root.notesFileHandler) {
+                    var newPath = root.notesFileHandler.createNote(root.folderPath, decodedLink, "", "#624a73");
+                    console.log("WikiLink: Created new note at:", newPath);
+                    if (newPath !== "" && root.onLinkActivatedCallback) {
+                        // Update the index with the new entry
+                        if (root.notesIndex) {
+                            root.notesIndex.updateEntry(newPath);
+                        }
+                        root.onLinkActivatedCallback(newPath);
+                    }
+                }
             }
 
             MouseArea {
@@ -165,20 +235,19 @@ Item {
 
     Component {
         id: editorComp
-        TextArea {
+        FluMultilineTextBox {
             id: editorArea
             width: root.width
-            text: root.content
-            wrapMode: Text.Wrap
-            color: FluTheme.dark ? "#FFFFFF" : "#000000"
-            font.pixelSize: 16
-            font.family: "Segoe UI"
+            text: {
+                if (root.type === "heading") {
+                    return "#".repeat(root.level) + " " + root.content;
+                }
+                return root.content;
+            }
 
-            // Darker background for edit mode
-            // Darker background for edit mode removed due to style customization warning
-            // background: Rectangle { ... }
-
-            selectByMouse: true
+            // Override the default Enter behavior of FluMultilineTextBox
+            Keys.onReturnPressed: event => handleEnter(event)
+            Keys.onEnterPressed: event => handleEnter(event)
 
             Keys.onPressed: event => {
                 if (event.matches(StandardKey.Paste)) {
@@ -198,31 +267,42 @@ Item {
                             event.accepted = true;
                         }
                     }
-                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    // Split block
-                    event.accepted = true;
-                    var pos = cursorPosition;
-                    var fullText = text;
-                    var preText = fullText.substring(0, pos);
-                    var postText = fullText.substring(pos);
-
-                    // Update current block
-                    if (root.noteListView && root.noteListView.model) {
-                        root.noteListView.model.updateBlock(root.blockIndex, preText);
-                        // Insert new block
-                        root.noteListView.model.insertBlock(root.blockIndex + 1, "paragraph", postText);
-
-                        // Move focus to next block (tricky as it needs to be created first)
-                        // We can set the current index, and the view should handle it.
-                        root.noteListView.currentIndex = root.blockIndex + 1;
-                    }
-                    root.isEditing = false; // Close current editor
                 }
             }
 
+            function handleEnter(event) {
+                // Split block
+                event.accepted = true;
+                var pos = cursorPosition;
+                var fullText = text;
+                var preText = fullText.substring(0, pos);
+                var postText = fullText.substring(pos);
+
+                // Update current block
+                if (root.noteListView && root.noteListView.model) {
+                    root.noteListView.model.updateBlock(root.blockIndex, preText);
+                    root.noteListView.model.insertBlock(root.blockIndex + 1, "paragraph", postText);
+
+                    // Request focus on the new block via editor signal
+                    if (root.editor) {
+                        root.editor.requestBlockEdit(root.blockIndex + 1);
+                    }
+                }
+                root.isEditing = false; // Close current editor
+            }
+
             Component.onCompleted: {
-                forceActiveFocus();
+                focusTimer.start();
                 cursorPosition = length;
+            }
+
+            Timer {
+                id: focusTimer
+                interval: 50
+                repeat: false
+                onTriggered: {
+                    editorArea.forceActiveFocus();
+                }
             }
 
             onEditingFinished: {
@@ -238,7 +318,13 @@ Item {
             function finishEdit() {
                 if (root.isEditing) {
                     if (root.noteListView && root.noteListView.model) {
-                        root.noteListView.model.updateBlock(root.blockIndex, text);
+                        // Use replaceBlock if it exists to allow re-parsing type/level
+                        // Fallback to updateBlock if C++ not yet updated/compiled
+                        if (typeof root.noteListView.model.replaceBlock === "function") {
+                            root.noteListView.model.replaceBlock(root.blockIndex, text);
+                        } else {
+                            root.noteListView.model.updateBlock(root.blockIndex, text);
+                        }
                     }
                     root.isEditing = false;
                 }

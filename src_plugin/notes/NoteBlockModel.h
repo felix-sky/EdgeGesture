@@ -36,6 +36,7 @@ public:
   Q_INVOKABLE void updateBlock(int index, const QString &text);
   Q_INVOKABLE void insertBlock(int index, const QString &type,
                                const QString &content);
+  Q_INVOKABLE void replaceBlock(int index, const QString &text);
   Q_INVOKABLE QString getMarkdown() const;
 
 signals:

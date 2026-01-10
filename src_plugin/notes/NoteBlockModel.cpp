@@ -129,6 +129,48 @@ void NoteBlockModel::insertBlock(int row, const QString &typeString,
   endInsertRows();
 }
 
+void NoteBlockModel::replaceBlock(int row, const QString &text) {
+  if (row < 0 || row >= m_blocks.size())
+    return;
+
+  // Parse the new text
+  // We use the static parse method directly
+  QVector<NoteBlock> newBlocks = MarkdownParser::parse(text);
+
+  if (newBlocks.isEmpty()) {
+    // If text is empty or meaningless, maybe we should just remove the block?
+    // Or replace with empty paragraph?
+    // Let's assume empty text -> empty paragraph
+    NoteBlock emptyBlock;
+    emptyBlock.type = BlockType::Paragraph;
+    emptyBlock.content = "";
+    newBlocks.append(emptyBlock);
+  }
+
+  // Optimize for 1-to-1 replacement (common case)
+  if (newBlocks.size() == 1) {
+    m_blocks[row] = newBlocks.first();
+    QVector<int> roles = {TypeRole, ContentRole, LevelRole, MetadataRole,
+                          LanguageRole};
+    emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
+    return;
+  }
+
+  // Remove old block
+  beginRemoveRows(QModelIndex(), row, row);
+  m_blocks.removeAt(row);
+  endRemoveRows();
+
+  // Insert new blocks
+  if (!newBlocks.isEmpty()) {
+    beginInsertRows(QModelIndex(), row, row + newBlocks.size() - 1);
+    for (int i = 0; i < newBlocks.size(); ++i) {
+      m_blocks.insert(row + i, newBlocks[i]);
+    }
+    endInsertRows();
+  }
+}
+
 QString NoteBlockModel::getMarkdown() const {
   QString result;
   for (const NoteBlock &block : m_blocks) {
