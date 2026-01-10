@@ -59,6 +59,7 @@ void NotesIndex::rebuildIndex() {
   }
 
   m_indexing = true;
+  qDebug() << "NotesIndex: Rebuilding index for path:" << m_rootPath;
   emit indexingChanged();
 
   // Count files first for progress

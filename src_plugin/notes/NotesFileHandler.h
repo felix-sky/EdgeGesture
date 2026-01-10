@@ -1,9 +1,12 @@
 #pragma once
 
+#include <QDateTime>
+#include <QImage>
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
 #include <QtQml>
+
 
 class NotesFileHandler : public QObject {
   Q_OBJECT
@@ -111,6 +114,13 @@ public:
    * @return List of tags.
    */
   Q_INVOKABLE QStringList getTags(const QString &path);
+
+  /**
+   * @brief Saves an image from the clipboard to the specified folder.
+   * @param folderPath The folder to save the image in.
+   * @return The saved filename if successful, or empty string.
+   */
+  Q_INVOKABLE QString saveClipboardImage(const QString &folderPath);
 
   /**
    * @brief Finds an image file within the notes vault.

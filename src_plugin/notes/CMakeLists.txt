@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(NotesPlugin LANGUAGES CXX)
+project(NotesPlugin LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Qml Quick Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Concurrent)
 
 # Plugin output directory
 set(NOTES_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/plugin/additional/EdgeGesture/Notes")
@@ -21,10 +21,14 @@ qt_add_qml_module(notesplugin
         NotesModel.h NotesModel.cpp
         NotesFileHandler.h NotesFileHandler.cpp
         NotesIndex.h NotesIndex.cpp
+        MarkdownParser.h MarkdownParser.cpp
+        NoteBlockModel.h NoteBlockModel.cpp
+        md4c/src/md4c.c
 )
 
 target_link_libraries(notesplugin PRIVATE
     Qt6::Core
+    Qt6::Gui
     Qt6::Qml
     Qt6::Quick
     Qt6::Concurrent

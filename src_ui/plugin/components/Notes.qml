@@ -37,7 +37,13 @@ Item {
     }
 
     // NotesIndex singleton for index updates
+    // In Qt 6 with QML_SINGLETON, 'NotesIndex' refers to the singleton instance directly
     property var notesIndex: NotesIndex
+
+    Component.onCompleted: {
+        // NotesIndex.setRootPath is called by NotesModel.setRootPath, no need to call it here
+        // This prevents a duplicate call that could cause blocking
+    }
 
     // Main Navigation view
     StackView {
@@ -75,7 +81,8 @@ Item {
                     isEditing: isEditing,
                     notesFileHandler: notesFileHandler,
                     notesIndex: root.notesIndex,
-                    notesModel: notesModel
+                    notesModel: notesModel,
+                    vaultRootPath: notesRootPath
                 });
             }
         }
@@ -102,7 +109,8 @@ Item {
                     isEditing: false,
                     notesFileHandler: notesFileHandler,
                     notesIndex: root.notesIndex,
-                    notesModel: notesModel
+                    notesModel: notesModel,
+                    vaultRootPath: notesRootPath
                 });
             }
         }
@@ -134,7 +142,10 @@ Item {
         folder: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0]
         onAccepted: {
             var newPath = notesFileHandler.urlToPath(folderDialog.folder.toString());
+            // Update the root path for model, index, AND notes editor
+            notesRootPath = newPath;
             notesModel.rootPath = newPath;
+            NotesIndex.setRootPath(newPath);
         }
     }
 

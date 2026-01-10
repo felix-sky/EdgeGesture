@@ -1,13 +1,20 @@
 #include "NotesFileHandler.h"
+#include <QClipboard>
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QImage>
+#include <QMimeData>
 #include <QRegularExpression>
 #include <QTextStream>
 #include <QUrl>
 
-NotesFileHandler::NotesFileHandler(QObject *parent) : QObject(parent) {}
+NotesFileHandler::NotesFileHandler(QObject *parent) : QObject(parent) {
+  // Constructor
+}
 
 QString NotesFileHandler::createNote(const QString &folderPath,
                                      const QString &title,
@@ -358,6 +365,32 @@ QStringList NotesFileHandler::getTags(const QString &path) {
   return tags;
 }
 
+QString NotesFileHandler::saveClipboardImage(const QString &folderPath) {
+  QClipboard *clipboard = QGuiApplication::clipboard();
+  const QMimeData *mimeData = clipboard->mimeData();
+
+  if (mimeData->hasImage()) {
+    QImage image = qvariant_cast<QImage>(mimeData->imageData());
+    if (!image.isNull()) {
+      QString fileName =
+          "Pasted image " +
+          QDateTime::currentDateTime().toString("yyyyMMddHHmmss") + ".png";
+      QString fullPath = folderPath + "/" + fileName;
+
+      // Ensure folder exists
+      QDir dir(folderPath);
+      if (!dir.exists()) {
+        dir.mkpath(".");
+      }
+
+      if (image.save(fullPath, "PNG")) {
+        return fileName;
+      }
+    }
+  }
+  return "";
+}
+
 QString NotesFileHandler::findImage(const QString &imageName,
                                     const QString &notePath,
                                     const QString &rootPath) {
@@ -402,6 +435,24 @@ QString NotesFileHandler::findImage(const QString &imageName,
                   QDirIterator::Subdirectories);
   if (it.hasNext()) {
     return QDir::cleanPath(it.next());
+  }
+
+  // FALLBACK: Try without "Pasted image " prefix (common Obsidian naming issue)
+  if (imageName.startsWith(QStringLiteral("Pasted image "))) {
+    QString altName = imageName.mid(13); // Remove "Pasted image " (13 chars)
+
+    // Try direct path first
+    QString altPath = noteFolder + QStringLiteral("/") + altName;
+    if (QFile::exists(altPath)) {
+      return QDir::cleanPath(altPath);
+    }
+
+    // Recursive search with alternate name
+    QDirIterator altIt(normalizedRoot, QStringList() << altName, QDir::Files,
+                       QDirIterator::Subdirectories);
+    if (altIt.hasNext()) {
+      return QDir::cleanPath(altIt.next());
+    }
   }
 
   // Not found
