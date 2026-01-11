@@ -13,6 +13,9 @@ Item {
     property var noteListView: null
     property var notesIndex: null
     property int blockIndex: -1
+    property string type: "quote"
+    property int level: 0
+    property var editor: null
 
     property var onLinkActivatedCallback: null
     property var notesFileHandler: null // For image search
@@ -20,7 +23,7 @@ Item {
     property string vaultRootPath: "" // Root of the vault for image search
 
     // Strings for debugging
-    Component.onCompleted: { }
+    Component.onCompleted: {}
 
     // Sync content when model changes
     onContentChanged: {
@@ -54,9 +57,13 @@ Item {
                 text: {
                     var t = root.content;
                     var basePath = "file:///" + root.folderPath.replace(/\\/g, "/") + "/";
-                    
+
+                    // Highlight
+                    var highlightColor = FluTheme.dark ? "rgba(255, 215, 0, 0.4)" : "rgba(255, 255, 0, 0.5)";
+                    t = t.replace(/==(.*?)==/g, '<span style="background-color: ' + highlightColor + ';">$1</span>');
+
                     // Replace ![[image.png]] with standard Markdown ![image.png](url)
-                    t = t.replace(/!\[\[(.*?)\]\]/g, function(match, p1) {
+                    t = t.replace(/!\[\[(.*?)\]\]/g, function (match, p1) {
                         var src = p1;
                         if (src.indexOf(":") === -1 && src.indexOf("/") !== 0) {
                             src = basePath + src;
@@ -68,7 +75,7 @@ Item {
                     });
 
                     // Replace [[Link]] with <a href="Link">Link</a>
-                    t = t.replace(/\[\[(.*?)\]\]/g, function(match, p1) {
+                    t = t.replace(/\[\[(.*?)\]\]/g, function (match, p1) {
                         return '<a href="' + encodeURIComponent(p1) + '">' + p1 + '</a>';
                     });
                     return t;
@@ -91,25 +98,34 @@ Item {
                     console.log("  > QC BaseUrl:", baseUrl);
                 }
 
-                onLinkActivated: (link) => {
+                onLinkActivated: link => {
                     var decodedLink = decodeURIComponent(link);
                     var globalPath = "";
                     if (root.notesIndex) {
                         globalPath = root.notesIndex.findPathByTitle(decodedLink);
                     }
                     if (globalPath !== "") {
-                        if (root.onLinkActivatedCallback) root.onLinkActivatedCallback(globalPath);
+                        if (root.onLinkActivatedCallback)
+                            root.onLinkActivatedCallback(globalPath);
                         return;
                     }
                     if (decodedLink.endsWith(".md")) {
-                         var p = root.folderPath + "/" + decodedLink;
-                         if (root.onLinkActivatedCallback) root.onLinkActivatedCallback(p);
-                         return;
+                        var p = root.folderPath + "/" + decodedLink;
+                        if (root.onLinkActivatedCallback)
+                            root.onLinkActivatedCallback(p);
+                        return;
                     }
                     Qt.openUrlExternally(link);
                 }
 
                 MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor
+                    onClicked: mouse => {
+                        var link = parent.linkAt(mouse.x, mouse.y);
+                        if (link) {
+                            parent.linkActivated(link);
                         } else {
                             if (root.noteListView) {
                                 root.noteListView.currentIndex = root.blockIndex;

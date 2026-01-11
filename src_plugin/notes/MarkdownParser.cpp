@@ -1,14 +1,14 @@
 #include "MarkdownParser.h"
 #include "md4c/src/md4c.h"
 #include <QDebug>
-#include <QStack>
+#include <QRegularExpression>
 
 // Context to pass to md4c callbacks
 struct ParseContext {
   QVector<NoteBlock> blocks;
   NoteBlock currentBlock;
   bool inBlock = false;
-  // Helper to buffer text for the current block
+  int inQuoteLevel = 0; // Track nesting for flattening Quotes/Callouts
   QString currentTextBuffer;
 };
 
@@ -17,19 +17,23 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
                                 void *userdata) {
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
 
-  // If we were already in a block, we might need to flush it or handle nesting.
-  // md4c handles nesting, but for our flat list of visual blocks, we mostly
-  // care about top-level or specific blocks. For simplicity in Phase 1, we
-  // treat nested blocks as part of the parent or separate blocks depending on
-  // type.
-
-  // Commit previous block if valid and we are starting a new major block
-  // (This logic might need refinement for nested lists, but good start)
-  if (ctx->inBlock) {
-    // Recursive/nested constraint: MD4C might fire P inside LI.
-    // We might want to flush the LI start?
+  // If we are deeper in a quote (nested), we don't start new blocks yet.
+  // We flatten everything inside the top-level quote into one block.
+  if (ctx->inQuoteLevel > 0) {
+    if (type == MD_BLOCK_QUOTE) {
+      ctx->inQuoteLevel++;
+    }
+    // Add separator for paragraphs inside quotes
+    if (type == MD_BLOCK_P) {
+      if (!ctx->currentTextBuffer.isEmpty() &&
+          !ctx->currentTextBuffer.endsWith('\n')) {
+        ctx->currentTextBuffer.append("\n\n");
+      }
+    }
+    return 0;
   }
 
+  // Start of a Top-Level Block
   NoteBlock newBlock;
   ctx->inBlock = true;
   ctx->currentTextBuffer.clear();
@@ -52,29 +56,36 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
   }
   case MD_BLOCK_QUOTE:
     newBlock.type = BlockType::Quote;
+    ctx->inQuoteLevel = 1; // Start Quote Mode
     break;
-  case MD_BLOCK_UL:
-  case MD_BLOCK_OL:
-  case MD_BLOCK_LI:
-    newBlock.type = BlockType::List;
-    // Logic for lists is tricky in a flat list model.
-    // We might treat LI as individual blocks.
+  case MD_BLOCK_LI: {
+    MD_BLOCK_LI_DETAIL *li_detail = (MD_BLOCK_LI_DETAIL *)detail;
+    if (li_detail->is_task) {
+      newBlock.type = BlockType::TaskList;
+      newBlock.type = BlockType::TaskList;
+      // Capture the exact char: 'x', 'X', ' ', '-', '/'
+      QChar mark = QChar(li_detail->task_mark);
+      newBlock.metadata["taskStatus"] = QString(mark);
+      newBlock.metadata["checked"] = (mark == 'x' || mark == 'X');
+    } else {
+      newBlock.type = BlockType::List;
+    }
     break;
+  }
   case MD_BLOCK_P:
     newBlock.type = BlockType::Paragraph;
     break;
   default:
-    newBlock.type = BlockType::Paragraph; // Fallback
+    // For others (UL, OL, etc.), we don't necessarily start a *content* block
+    // but we update state. However, for our flat list, we mostly ignore UL/OL
+    // containers acting only on LIs.
+    ctx->inBlock = false; // Don't flag this as an active content block
     break;
   }
 
-  // Prepare current block
-  // Since md4c is recursive, this "currentBlock" notion is simplistic.
-  // A proper implementation uses a stack.
-  // For Phase 1, let's assuming we accumulate text into the current "Leaf"
-  // block.
-
-  ctx->currentBlock = newBlock;
+  if (ctx->inBlock) {
+    ctx->currentBlock = newBlock;
+  }
   return 0;
 }
 
@@ -82,44 +93,87 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
                                 void *userdata) {
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
 
-  // When leaving a block, we finalize it.
-  // Flattening: We only append "leaf" blocks or major structural blocks.
-  // E.g. Leave P -> append block.
-  // Leave LI -> append block.
+  // Quote Logic
+  if (type == MD_BLOCK_QUOTE) {
+    if (ctx->inQuoteLevel > 0) {
+      ctx->inQuoteLevel--;
+      if (ctx->inQuoteLevel == 0) {
+        // Finalize Quote Block
+        ctx->currentBlock.content = ctx->currentTextBuffer;
 
-  // Filter: DONT append container blocks like UL/OL if they just contain LIs
-  // (which we also append). Actually, we want to append the block ONLY if it
-  // has content, OR if it's a structural separator.
+        // Check for Callout Standard: [!INFO] Title
+        // The text buffer usually doesn't have the '>' markers.
+        // Regex: ^\[!(\w+)\](.*?)(\n|$)
+        // Note: md4c might leave leading spaces? content is usually trimmed by
+        // logic? Let's trim whitespace first.
+        QString cleanContent = ctx->currentTextBuffer.trimmed();
 
-  if (type == MD_BLOCK_DOC)
-    return 0; // Ignore doc root
+        QRegularExpression regex(R"(^\[!(\w+)\][ \t]*(.*?)(\n|$))");
+        QRegularExpressionMatch match = regex.match(cleanContent);
+        if (match.hasMatch()) {
+          ctx->currentBlock.type = BlockType::Callout;
+          ctx->currentBlock.metadata["calloutType"] =
+              match.captured(1).toLower();
+          ctx->currentBlock.metadata["title"] = match.captured(2).trimmed();
 
-  // Simplistic flattening:
-  // If we are leaving a P, H, CODE, QUOTE, LI -> push it.
-  // If we are leaving UL/OL -> do nothing (the LIs were pushed).
+          // Remove the definition line from content if strict?
+          // Obsidian usually hides it.
+          // Start index of content: match end.
+          int matchEnd = match.capturedEnd(0); // End of first line
+          if (matchEnd < cleanContent.length()) {
+            ctx->currentBlock.content = cleanContent.mid(matchEnd).trimmed();
+          } else {
+            ctx->currentBlock.content = "";
+          }
+        }
 
+        ctx->blocks.append(ctx->currentBlock);
+        ctx->inBlock = false;
+      }
+    }
+    return 0;
+  }
+
+  // If we are inside a quote, we ignore leave events of children (flattening)
+  if (ctx->inQuoteLevel > 0) {
+    return 0;
+  }
+
+  // Standard Blocks
   bool shouldPush = false;
   switch (type) {
+  case MD_BLOCK_LI:
+    shouldPush = true;
+    if (ctx->inBlock) {
+      // Manual check for extended task statuses that md4c missed
+      if (ctx->currentBlock.type == BlockType::List) {
+        QString cleanContent = ctx->currentTextBuffer.trimmed();
+        QRegularExpression regex(R"(^\[(.)\]\s+(.*)$)");
+        QRegularExpressionMatch match = regex.match(cleanContent);
+        if (match.hasMatch()) {
+          ctx->currentBlock.type = BlockType::TaskList;
+          QString mark = match.captured(1);
+          ctx->currentBlock.metadata["taskStatus"] = mark;
+          ctx->currentBlock.metadata["checked"] = (mark == "x" || mark == "X");
+          ctx->currentTextBuffer =
+              match.captured(2).trimmed(); // Update content to remove hook
+        }
+      }
+    }
+    break;
   case MD_BLOCK_P:
   case MD_BLOCK_H:
   case MD_BLOCK_CODE:
-  case MD_BLOCK_QUOTE:
-  case MD_BLOCK_LI:
     shouldPush = true;
     break;
   default:
     break;
   }
 
-  if (shouldPush) {
+  if (shouldPush && ctx->inBlock) {
     ctx->currentBlock.content = ctx->currentTextBuffer;
-
-    // Simple heuristic: If it's a list item, prefix with bullet?
-    // Or handle in QML. Let's handle in QML.
-
     ctx->blocks.append(ctx->currentBlock);
 
-    // Reset
     ctx->currentTextBuffer.clear();
     ctx->inBlock = false;
   }
@@ -137,23 +191,19 @@ static int enter_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
   if (type == MD_SPAN_CODE)
     ctx->currentTextBuffer.append("`");
 
-  // Convert WikiLinks to Standard Markdown Links
-  // [[Target]] -> [Target](Target)
-  // ![[Image.png]] -> ![Image.png](Image.png)
   if (type == MD_SPAN_WIKILINK) {
-    // PRESERVE syntax: [[Target]]
     ctx->currentTextBuffer.append("[[");
   }
 
   if (type == MD_SPAN_IMG) {
-    // PRESERVE syntax: ![[Image.png]] if it was a wikilink image?
-    // MD4C parses ![[...]] as IMG if the dialect allows it?
-    // Actually MD4C MD_FLAG_WIKILINKS parses [[...]] as WikiLink.
-    // It does not necessarily parse ![[...]] as IMG automatically unless it's
-    // standard syntax ![...](...). Wait, User says ![[Pasted image...]] If MD4C
-    // parses that as text, fine. If it parses as IMG, we preserve. Standard
-    // CommonMark IMG is ![alt](src).
     ctx->currentTextBuffer.append("![");
+  }
+
+  if (type == MD_SPAN_LATEXMATH) {
+    ctx->currentTextBuffer.append("$");
+  }
+  if (type == MD_SPAN_LATEXMATH_DISPLAY) {
+    ctx->currentTextBuffer.append("$$");
   }
 
   return 0;
@@ -178,6 +228,13 @@ static int leave_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
     ctx->currentTextBuffer.append(QString("](%1)").arg(src));
   }
 
+  if (type == MD_SPAN_LATEXMATH) {
+    ctx->currentTextBuffer.append("$");
+  }
+  if (type == MD_SPAN_LATEXMATH_DISPLAY) {
+    ctx->currentTextBuffer.append("$$");
+  }
+
   return 0;
 }
 
@@ -193,8 +250,9 @@ QVector<NoteBlock> MarkdownParser::parse(const QString &markdown) {
   ParseContext ctx;
 
   MD_PARSER parser = {
-      0,                                     // abi_version
-      MD_DIALECT_GITHUB | MD_FLAG_WIKILINKS, // flags
+      0, // abi_version
+      MD_DIALECT_GITHUB | MD_FLAG_WIKILINKS | MD_FLAG_TASKLISTS |
+          MD_FLAG_LATEXMATHSPANS, // flags
       enter_block_callback,
       leave_block_callback,
       enter_span_callback,

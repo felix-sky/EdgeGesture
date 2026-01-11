@@ -30,6 +30,10 @@ QVariant NoteBlockModel::data(const QModelIndex &index, int role) const {
       return "code";
     case BlockType::Quote:
       return "quote";
+    case BlockType::Callout:
+      return "callout";
+    case BlockType::TaskList:
+      return "tasklist";
     case BlockType::List:
       return "list";
     case BlockType::Image:
@@ -118,6 +122,10 @@ void NoteBlockModel::insertBlock(int row, const QString &typeString,
     block.type = BlockType::Code;
   else if (typeString == "quote")
     block.type = BlockType::Quote;
+  else if (typeString == "callout")
+    block.type = BlockType::Callout;
+  else if (typeString == "tasklist")
+    block.type = BlockType::TaskList;
   else if (typeString == "list")
     block.type = BlockType::List;
   else if (typeString == "image")
@@ -189,6 +197,25 @@ QString NoteBlockModel::getMarkdown() const {
         result.append("> " + line + "\n");
       }
       result.append("\n");
+    } break;
+    case BlockType::Callout: {
+      result.append("> [!" +
+                    block.metadata["calloutType"].toString().toUpper() + "] " +
+                    block.metadata["title"].toString() + "\n");
+      QStringList lines = block.content.split('\n');
+      for (const QString &line : lines) {
+        result.append("> " + line + "\n");
+      }
+      result.append("\n");
+    } break;
+    case BlockType::TaskList: {
+      QString mark = " ";
+      if (block.metadata.contains("taskStatus")) {
+        mark = block.metadata["taskStatus"].toString();
+      } else {
+        mark = block.metadata["checked"].toBool() ? "x" : " ";
+      }
+      result.append(QString("- [%1] %2\n").arg(mark).arg(block.content));
     } break;
     case BlockType::List:
       result.append("- " + block.content + "\n");

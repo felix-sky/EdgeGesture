@@ -205,6 +205,7 @@ FluScrollablePage {
             }
         }
 
+
         FluText {
             text: "Long Swipe"
             font: FluTextStyle.Subtitle

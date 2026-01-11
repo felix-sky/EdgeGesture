@@ -5,7 +5,7 @@ import FluentUI 1.0
 Item {
     id: root
     width: ListView.view ? ListView.view.width - 20 : 300
-    height: loader.item ? loader.item.implicitHeight + 16 : 40 // +16 for margins
+    implicitHeight: loader.implicitHeight + 16
 
     property string content: model.content ? model.content : ""
     property string language: model.language ? model.language : ""
@@ -13,11 +13,14 @@ Item {
     property string folderPath: ""
     property var noteListView: null
     property var notesIndex: null
+    property var editor: null
     property var onLinkActivatedCallback: null
-    property var notesFileHandler: null // For compatibility
-    property string notePath: "" // For compatibility
-    property string vaultRootPath: "" // For compatibility
+    property var notesFileHandler: null
+    property string notePath: ""
+    property string vaultRootPath: ""
     property int blockIndex: -1
+    property string type: "code"
+    property int level: 0
 
     Rectangle {
         anchors.fill: parent

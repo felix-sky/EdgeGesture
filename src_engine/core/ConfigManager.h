@@ -12,7 +12,7 @@ struct SideConfig {
   bool enabled = true;
   int width = 30;
   int size =
-      100; // Vertical size % or px? Let's assume px for now or logic handles it
+      100; 
   int position = 50; // Top offset %
   std::string color = "#000000";
 };

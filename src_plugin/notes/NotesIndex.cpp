@@ -1,9 +1,11 @@
 #include "NotesIndex.h"
+#include "MathImageProvider.h"
 #include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
+#include <QTimer>
 #include <QtConcurrent>
 
 NotesIndex *NotesIndex::s_instance = nullptr;
@@ -16,14 +18,41 @@ NotesIndex *NotesIndex::instance() {
 }
 
 NotesIndex *NotesIndex::create(QQmlEngine *qmlEngine, QJSEngine *jsEngine) {
-  Q_UNUSED(qmlEngine);
   Q_UNUSED(jsEngine);
+  // Register Image Provider
+  if (qmlEngine) {
+    qCritical() << "NotesIndex::create - Registering 'microtex' image provider";
+    qmlEngine->addImageProvider(QLatin1String("microtex"),
+                                new MathImageProvider());
+  } else {
+    qCritical()
+        << "NotesIndex::create - qmlEngine is null, cannot register provider";
+  }
   return instance();
 }
 
 NotesIndex::NotesIndex(QObject *parent)
     : QObject(parent), m_fsWatcher(new QFileSystemWatcher(this)),
       m_watcher(new QFutureWatcher<QVector<NoteMetadata>>(this)) {
+  qCritical() << "NotesIndex::NotesIndex (Constructor) - Instance created:"
+              << this;
+
+  // Defer image provider registration to next event loop iteration
+  // At that point, this object will be attached to a QML engine
+  QTimer::singleShot(0, this, [this]() {
+    QQmlEngine *engine = qmlEngine(this);
+    if (engine) {
+      qCritical()
+          << "NotesIndex: Registering 'microtex' image provider with engine:"
+          << engine;
+      engine->addImageProvider(QLatin1String("microtex"),
+                               new MathImageProvider());
+    } else {
+      qCritical() << "NotesIndex: Could not find QML engine for image provider "
+                     "registration!";
+    }
+  });
+
   connect(m_watcher, &QFutureWatcher<QVector<NoteMetadata>>::finished, this,
           &NotesIndex::onScanFinished);
   connect(m_fsWatcher, &QFileSystemWatcher::directoryChanged, this,

@@ -5,13 +5,14 @@
 #include <QString>
 #include <QVariantMap>
 
-
 enum class BlockType {
   Paragraph,
   Heading,
   Code,
   Quote,
+  Callout, // New
   List,
+  TaskList, // New
   Image,
   ThematicBreak,
   Math,
@@ -30,7 +31,5 @@ struct NoteBlock {
   int heightHint = 0;
 };
 
-// Helper for QML enum exposure (if needed, or just use strings/ints)
-// We'll likely map these to role names or integer types in the Model.
 
 #endif // NOTEBLOCK_H

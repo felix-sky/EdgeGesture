@@ -19,6 +19,7 @@ Item {
     property string vaultRootPath: "" // Root of the notes vault for image search
 
     property int pendingFocusIndex: -1 // Track which block should get focus on load
+    property int activeBlockIndex: -1 // Currently active/focused block (Obsidian-style)
 
     property string currentColor: "#624a73"
 
@@ -27,6 +28,34 @@ Item {
     signal addTagRequested(string path)
     signal linkOpened(string path, string title)
     signal requestBlockEdit(int index)
+    signal navigateUp(int fromIndex) // Signal to navigate to previous block
+    signal navigateDown(int fromIndex) // Signal to navigate to next block
+
+    // Navigation function: go to specific block
+    function navigateToBlock(index, cursorAtEnd) {
+        if (index >= 0 && index < blockModel.rowCount()) {
+            activeBlockIndex = index;
+            pendingFocusIndex = index;
+            // Store cursor position preference
+            editorPage._cursorAtEnd = cursorAtEnd !== undefined ? cursorAtEnd : true;
+            requestBlockEdit(index);
+        }
+    }
+    property bool _cursorAtEnd: true // Internal: cursor position for next focus
+
+    // Navigate to previous block (called from block when arrow up at first line)
+    function goToPreviousBlock(fromIndex) {
+        if (fromIndex > 0) {
+            navigateToBlock(fromIndex - 1, true); // cursor at end
+        }
+    }
+
+    // Navigate to next block (called from block when arrow down at last line)
+    function goToNextBlock(fromIndex) {
+        if (fromIndex < blockModel.rowCount() - 1) {
+            navigateToBlock(fromIndex + 1, false); // cursor at start
+        }
+    }
 
     NoteBlockModel {
         id: blockModel
@@ -52,18 +81,21 @@ Item {
             currentColor = noteData.color;
 
             // Ensure we have at least one block for editing if empty
-            if (noteData.content.trim() === "") {
-            }
+            if (noteData.content.trim() === "") {}
         }
     }
 
     Connections {
         target: blockModel
         function onLoadingChanged() {
-            if (!blockModel.loading && blockModel.rowCount() === 0) {
-                blockModel.insertBlock(0, "paragraph", "");
-                // Optional: Auto-focus first block
-                editorPage.requestBlockEdit(0);
+            if (!blockModel.loading) {
+                if (blockModel.rowCount() === 0) {
+                    blockModel.insertBlock(0, "paragraph", "");
+                }
+                // Always auto-focus first block when note loads (Obsidian-style)
+                Qt.callLater(function () {
+                    editorPage.navigateToBlock(0, false);
+                });
             }
         }
     }
@@ -193,6 +225,19 @@ Item {
             // Optimization: Cache buffer for smooth scrolling
             cacheBuffer: 1000
 
+            // Handle clicks on empty area (below all delegates)
+            MouseArea {
+                anchors.fill: parent
+                z: -1 // Behind delegates so delegate clicks still work
+                onClicked: {
+                    // Focus the last block when clicking empty area
+                    var lastIndex = blockModel.rowCount() - 1;
+                    if (lastIndex >= 0) {
+                        editorPage.navigateToBlock(lastIndex, true);
+                    }
+                }
+            }
+
             // Delegate Chooser Logic
             delegate: Loader {
                 id: delegateLoader
@@ -286,9 +331,7 @@ Item {
                             if (delegateLoader.item) {
                                 delegateLoader.item.isEditing = true;
                             } else {
-                                // Delegate not ready yet (e.g. still created), but wait,
-                                // ListView reuses delegates. If idx is out of view, it won't exist.
-                                // If it's about to be created, we need to store the intent
+                                // Delegate not ready yet, store the intent
                                 editorPage.pendingFocusIndex = idx;
                             }
                         }
@@ -300,7 +343,7 @@ Item {
                     if (item) {
                         // Check if we have a pending focus for this index
                         if (index === editorPage.pendingFocusIndex) {
-                            listView.currentIndex = index; // Sync ListView index
+                            listView.currentIndex = index;
                             item.isEditing = true;
                             editorPage.pendingFocusIndex = -1;
                         }
@@ -324,12 +367,15 @@ Item {
                 source: {
                     switch (model.type) {
                     case "heading":
-                        return "blocks/ParagraphBlock.qml"; // Unified Heading support
+                        return "blocks/ParagraphBlock.qml";
                     case "code":
                         return "blocks/CodeBlock.qml";
                     case "quote":
                         return "blocks/QuoteBlock.qml";
-                    // Future: ImageBlock, ListBlock
+                    case "callout":
+                        return "blocks/CalloutBlock.qml";
+                    case "tasklist":
+                        return "blocks/TaskListBlock.qml";
                     default:
                         return "blocks/ParagraphBlock.qml";
                     }

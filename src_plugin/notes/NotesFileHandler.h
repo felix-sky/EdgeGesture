@@ -7,7 +7,6 @@
 #include <QVariantMap>
 #include <QtQml>
 
-
 class NotesFileHandler : public QObject {
   Q_OBJECT
   QML_ELEMENT
@@ -135,6 +134,27 @@ public:
   Q_INVOKABLE QString findImage(const QString &imageName,
                                 const QString &notePath,
                                 const QString &rootPath);
+
+  /**
+   * @brief Extracts a section from a markdown file by heading name.
+   * Finds the heading matching sectionName and returns all content
+   * until the next heading of same or higher level.
+   * @param notePath The full path to the note file.
+   * @param sectionName The heading text to find (without # prefix).
+   * @return The content under that heading, or empty string if not found.
+   */
+  Q_INVOKABLE QString extractSection(const QString &notePath,
+                                     const QString &sectionName);
+
+  /**
+   * @brief Extracts a block by block ID from a markdown file.
+   * Searches for lines ending with ^blockId pattern.
+   * @param notePath The full path to the note file.
+   * @param blockId The block ID (without ^ prefix).
+   * @return The block content, or empty string if not found.
+   */
+  Q_INVOKABLE QString extractBlock(const QString &notePath,
+                                   const QString &blockId);
 
 private:
   QString sanitizeFileName(const QString &name);

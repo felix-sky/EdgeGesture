@@ -458,3 +458,124 @@ QString NotesFileHandler::findImage(const QString &imageName,
   // Not found
   return QString();
 }
+
+QString NotesFileHandler::extractSection(const QString &notePath,
+                                         const QString &sectionName) {
+  QString normalizedPath = normalizePath(notePath);
+
+  QFile file(normalizedPath);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    qWarning()
+        << "NotesFileHandler: Failed to read file for section extraction:"
+        << normalizedPath;
+    return QString();
+  }
+
+  QTextStream in(&file);
+  QString content = in.readAll();
+  file.close();
+
+  // Skip frontmatter if present
+  if (content.startsWith(QLatin1String("---"))) {
+    int endIndex = content.indexOf(QLatin1String("---"), 3);
+    if (endIndex > 0) {
+      content = content.mid(endIndex + 4);
+    }
+  }
+
+  // Parse the markdown to find headings
+  // We use a simple line-by-line approach for efficiency
+  QStringList lines = content.split(QLatin1Char('\n'));
+
+  int startLine = -1;
+  int startLevel = 0;
+  QString sectionContent;
+
+  // Normalize search term
+  QString searchTerm = sectionName.trimmed();
+
+  for (int i = 0; i < lines.size(); ++i) {
+    QString line = lines[i];
+
+    // Check if this line is a heading (# Title, ## Title, etc.)
+    QRegularExpression headingRegex(QStringLiteral("^(#{1,6})\\s+(.*)$"));
+    QRegularExpressionMatch match = headingRegex.match(line);
+
+    if (match.hasMatch()) {
+      int level = match.captured(1).length();
+      QString headingText = match.captured(2).trimmed();
+
+      if (startLine < 0) {
+        // Looking for the target heading
+        if (headingText.compare(searchTerm, Qt::CaseInsensitive) == 0) {
+          startLine = i + 1; // Start collecting from next line
+          startLevel = level;
+        }
+      } else {
+        // Already found target, check if this heading ends the section
+        if (level <= startLevel) {
+          // This heading is at same or higher level - stop here
+          break;
+        }
+        // Otherwise include this heading in the section content
+        sectionContent += line + QLatin1Char('\n');
+      }
+    } else if (startLine >= 0) {
+      // We're collecting content after the target heading
+      sectionContent += line + QLatin1Char('\n');
+    }
+  }
+
+  return sectionContent.trimmed();
+}
+
+QString NotesFileHandler::extractBlock(const QString &notePath,
+                                       const QString &blockId) {
+  QString normalizedPath = normalizePath(notePath);
+
+  QFile file(normalizedPath);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    qWarning() << "NotesFileHandler: Failed to read file for block extraction:"
+               << normalizedPath;
+    return QString();
+  }
+
+  QTextStream in(&file);
+  QString content = in.readAll();
+  file.close();
+
+  // Skip frontmatter if present
+  if (content.startsWith(QLatin1String("---"))) {
+    int endIndex = content.indexOf(QLatin1String("---"), 3);
+    if (endIndex > 0) {
+      content = content.mid(endIndex + 4);
+    }
+  }
+
+  // Search for line/paragraph ending with ^blockId
+  // Pattern: any content followed by ^blockId at end of line
+  QString searchPattern = QStringLiteral("\\^") +
+                          QRegularExpression::escape(blockId) +
+                          QStringLiteral("\\s*$");
+  QRegularExpression blockRegex(searchPattern,
+                                QRegularExpression::MultilineOption);
+
+  QStringList lines = content.split(QLatin1Char('\n'));
+
+  for (int i = 0; i < lines.size(); ++i) {
+    QString line = lines[i];
+
+    if (blockRegex.match(line).hasMatch()) {
+      // Found the block - return the content without the ^blockId marker
+      QString result = line;
+      result.replace(QRegularExpression(QStringLiteral("\\s*\\^") +
+                                        QRegularExpression::escape(blockId) +
+                                        QStringLiteral("\\s*$")),
+                     QString());
+      return result.trimmed();
+    }
+  }
+
+  // Block not found
+  return QString();
+}
