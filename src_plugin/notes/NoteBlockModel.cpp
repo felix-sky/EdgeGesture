@@ -177,6 +177,31 @@ void NoteBlockModel::updateBlock(int row, const QString &text) {
       emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
       return;
     }
+  } else if (m_blocks[row].type == BlockType::ThematicBreak) {
+    if (text.trimmed() != "---") {
+      // Converted back to paragraph (or potentially other types, but let's
+      // default to paragraph first)
+      m_blocks[row].type = BlockType::Paragraph;
+      // Retain the text as content
+      // However, we should check if it became a heading or list?
+      // For simplicity, just Paragraph for now, next edit will trigger regular
+      // parsing
+    }
+  } else if (m_blocks[row].type == BlockType::Reference) {
+    // If we are editing the raw content of a reference block
+    // Wait, ReferenceBlock.qml shows "content" which is the text *without* `|
+    // `. So if I edit "text" to "new text", it remains a Reference. But if I
+    // want to "break" the reference, I can't do it comfortably if I don't see
+    // the pipe. The user sees the pipe in the styling, but not in the editor
+    // usually? Actually, ReferenceBlock.qml shows `content` in
+    // `FluentEditorArea`. The `| ` is implicit. So editing a Reference block
+    // just edits the content. But what if the user wants to remove the
+    // reference status? They probably have to delete the block or we add a
+    // toggle. Or, we render `| ` in the text editor? If we render `| ` in the
+    // editor, then `text` includes it. ParagraphBlock.qml renders everything.
+    // In ReferenceBlock.qml, we are just showing content.
+    // So we don't need logic here for Reference *unless* we want to support
+    // un-referencing. Let's stick to Divider for now.
   }
 
   // Direct update for responsiveness

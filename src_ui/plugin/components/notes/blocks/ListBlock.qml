@@ -14,27 +14,34 @@ Item {
     property var notesFileHandler: null
     property string notePath: ""
     property string folderPath: "" // Extracted from notePath
+
     property var editor: null
-
-    // Block-specific properties
-    property var type: "" // "list"
-    property var level: 0
-    property bool isEditing: false
-
-    // Metadata
-    property var listType: model.metadata["listType"] || "bullet" // "bullet" or "ordered"
     property string content: model.content
+    property bool isEditing: false
+    property var listType: model.metadata["listType"] || "bullet"
 
-    // Signals
-    signal linkActivatedCallback(string link)
+    // Missing properties from Delegate
+    property var type: ""
+    property int level: 0
+    property string vaultRootPath: ""
 
-    function handleLinkClick(link) {
-        if (linkActivatedCallback) {
-            linkActivatedCallback(link);
-        } else {
-            console.warn("No link callback registered");
+    // Store next block index for timer
+    property int nextBlockIndex: -1
+
+    Timer {
+        id: newBlockFocusTimer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            if (root.nextBlockIndex >= 0 && root.editor) {
+                root.editor.navigateToBlock(root.nextBlockIndex, false);
+                root.nextBlockIndex = -1;
+            }
         }
     }
+
+    // Callback property for NotesEditor injection
+    property var onLinkActivatedCallback: null
 
     // Layout
     Row {
@@ -45,7 +52,7 @@ Item {
         Text {
             id: marker
             width: 24
-            text: root.listType === "ordered" ? "1." : "•" // Simple 1. for now, ideally binding to index
+            text: root.listType === "ordered" ? "1." : "•"
             font.pixelSize: 16
             color: root.editor ? root.editor.contrastColor : "#000000"
             horizontalAlignment: Text.AlignRight
@@ -53,31 +60,33 @@ Item {
             topPadding: 4 // Align with text
         }
 
-        // Content Area
-        TextArea {
+        // Content Area using FluentEditorArea
+        FluentEditorArea {
             id: textEdit
             width: parent.width - 32 // Adjust for marker
             text: root.content
-            wrapMode: Text.Wrap
+
+            // Custom properties passed to FluentEditorArea
+            customTextColor: root.editor ? root.editor.contrastColor : "#000000"
+            customSelectionColor: FluTheme.primaryColor
+            customBackgroundColor: root.editor ? root.editor.editBackgroundColor : "transparent"
+
+            // Override Enter behavior
+            Keys.onReturnPressed: event => handleEnter(event)
+            Keys.onEnterPressed: event => handleEnter(event)
+
             font.pixelSize: 16
-            color: root.editor ? root.editor.contrastColor : "#000000"
-            selectedTextColor: "#FFFFFF"
-            selectionColor: FluentTheme.primaryColor
-            selectByMouse: true
             font.family: "Segoe UI"
 
-            // Transparent background
-            background: Item {}
-
-            // Edit vs View handling (TextArea handles both, but we might want Markdown rendering in view)
-            // For now, simple text for MVP lists.
-            // TODO: Add rich text rendering for links inside lists
-            textFormat: Text.MarkdownText
-
-            onLinkActivated: root.handleLinkClick(link)
+            // Handle link activation via property callback
+            onLinkActivated: link => {
+                if (root.onLinkActivatedCallback) {
+                    root.onLinkActivatedCallback(link);
+                }
+            }
 
             // Keys
-            Keys.onPressed: {
+            Keys.onPressed: event => {
                 if (event.key === Qt.Key_Up) {
                     if (cursorPosition === 0 && root.editor) {
                         root.editor.navigateUp(root.blockIndex);
@@ -89,20 +98,14 @@ Item {
                         event.accepted = true;
                     }
                 } else if (event.key === Qt.Key_Backspace) {
-                    if (length === 0 && root.editor) {
+                    // Check logic: if cursor at 0 and length > 0, we might want to merge with previous?
+                    // But here we care about EMPTY block deletion.
+                    if (length === 0) {
                         // Empty list item -> Delete block
-                        // We need a removeBlock signal or method in editor
-                        // For now, let's try to assume empty -> delete behavior in model update?
-                        // No, explicit delete is better.
-                        // Plan had "Handle Backspace at start of line to merge..."
-                        // For now: if empty, delete.
-                        // But we don't have removeBlock exposed conveniently in QML?
-                        // Models have removeRow...
-                        // Let's rely on standard text editing for now or add a custom signal "requestRemove"
-                        // Actually NotesEditor has signals. Let's add removeBlock signal to NotesEditor later?
-                        // Or use the model directly via `notesModel`? No, `blockModel`.
-                        // `blockModel` is internal to NotesEditor.
-                        // We can iterate. For now stay simple.
+                        if (root.noteListView) {
+                            root.noteListView.model.removeBlock(root.blockIndex);
+                        }
+                        event.accepted = true;
                     }
                 }
             }
@@ -122,6 +125,26 @@ Item {
             }
 
             Connections {
+                target: root.noteListView
+                function onCurrentIndexChanged() {
+                    if (root.noteListView && root.noteListView.currentIndex !== root.blockIndex) {
+                        root.isEditing = false;
+                        textEdit.focus = false;
+                    }
+                }
+                ignoreUnknownSignals: true
+            }
+
+            onActiveFocusChanged: {
+                if (activeFocus) {
+                    if (root.noteListView) {
+                        root.noteListView.currentIndex = root.blockIndex;
+                    }
+                    root.isEditing = true;
+                }
+            }
+
+            Connections {
                 target: root
                 function onIsEditingChanged() {
                     if (root.isEditing) {
@@ -131,8 +154,45 @@ Item {
                         } else {
                             textEdit.cursorPosition = 0;
                         }
+                    } else {
+                        textEdit.focus = false;
                     }
                 }
+            }
+            function handleEnter(event) {
+                event.accepted = true;
+
+                var pos = cursorPosition;
+                var fullText = text;
+                var preText = fullText.substring(0, pos);
+                var postText = fullText.substring(pos);
+
+                // Prefix for new block to maintain list type
+                var prefix = "";
+                if (root.listType === "ordered") {
+                    // ideally increment number, but auto-formatting handles "1." well enough for now?
+                    // NoteBlockModel auto-format detects "1. ".
+                    prefix = "1. ";
+                } else {
+                    prefix = "* ";
+                }
+
+                if (root.noteListView && root.noteListView.model) {
+                    // Update current block
+                    root.noteListView.model.updateBlock(root.blockIndex, preText);
+
+                    // Insert new block as paragraph with prefix, model will likely convert it?
+                    // Or insert as "list" directly if possible?
+                    // Inserting as paragraph with prefix is safer if auto-format logic exists in updateBlock.
+                    // But insertBlock might not trigger updateBlock logic immediately?
+                    // Let's try inserting as Paragraph with prefix.
+                    root.noteListView.model.insertBlock(root.blockIndex + 1, "paragraph", prefix + postText);
+
+                    // Focus new block
+                    root.nextBlockIndex = root.blockIndex + 1;
+                    newBlockFocusTimer.start();
+                }
+                root.isEditing = false;
             }
         }
     }

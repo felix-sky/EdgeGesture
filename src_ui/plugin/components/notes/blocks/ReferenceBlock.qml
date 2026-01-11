@@ -13,7 +13,32 @@ Item {
     property bool isEditing: false
     property string content: model.content
 
-    signal linkActivatedCallback(string link)
+    // Missing properties from Delegate variables to avoid binding errors
+    property var type: ""
+    property int level: 0
+    property string vaultRootPath: ""
+    property string notePath: ""
+    property string folderPath: ""
+    property var notesFileHandler: null
+    property var notesIndex: null
+
+    // Callback property
+    property var onLinkActivatedCallback: null
+
+    // Store next block index for timer
+    property int nextBlockIndex: -1
+
+    Timer {
+        id: newBlockFocusTimer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            if (root.nextBlockIndex >= 0 && root.editor) {
+                root.editor.navigateToBlock(root.nextBlockIndex, false);
+                root.nextBlockIndex = -1;
+            }
+        }
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -24,11 +49,11 @@ Item {
         Rectangle {
             width: 4
             height: parent.height
-            color: FluentTheme.primaryColor
+            color: FluTheme.primaryColor
             anchors.left: parent.left
         }
 
-        TextArea {
+        FluentEditorArea {
             id: textEdit
             anchors.fill: parent
             anchors.leftMargin: 12 // Space for border
@@ -37,15 +62,47 @@ Item {
             anchors.bottomMargin: 4
 
             text: root.content
-            wrapMode: Text.Wrap
-            font.pixelSize: 15
-            color: root.editor ? root.editor.contrastColor : "#000000"
-            selectByMouse: true
-            background: Item {}
-            textFormat: Text.MarkdownText
 
-            onLinkActivated: if (root.linkActivatedCallback)
-                root.linkActivatedCallback(link)
+            // Custom properties passed to FluentEditorArea
+            customTextColor: root.editor ? root.editor.contrastColor : "#000000"
+            customSelectionColor: FluTheme.primaryColor
+            customBackgroundColor: "transparent"
+
+            font.pixelSize: 15
+            font.family: "Segoe UI"
+
+            onLinkActivated: link => {
+                if (root.onLinkActivatedCallback) {
+                    root.onLinkActivatedCallback(link);
+                }
+            }
+
+            // Override Enter behavior
+            Keys.onReturnPressed: event => handleEnter(event)
+            Keys.onEnterPressed: event => handleEnter(event)
+
+            function handleEnter(event) {
+                event.accepted = true;
+
+                var pos = cursorPosition;
+                var fullText = text;
+                var preText = fullText.substring(0, pos);
+                var postText = fullText.substring(pos);
+
+                if (root.noteListView && root.noteListView.model) {
+                    // Update current block
+                    root.noteListView.model.updateBlock(root.blockIndex, preText);
+
+                    // Insert new reference block
+                    // "reference" type should automatically implied "| " prefix in backend
+                    root.noteListView.model.insertBlock(root.blockIndex + 1, "reference", postText);
+
+                    // Focus new block
+                    root.nextBlockIndex = root.blockIndex + 1;
+                    newBlockFocusTimer.start();
+                }
+                root.isEditing = false;
+            }
 
             onEditingFinished: {
                 if (root.blockIndex >= 0 && root.noteListView) {
@@ -53,13 +110,38 @@ Item {
                 }
             }
 
-            Keys.onPressed: {
+            Keys.onPressed: event => {
                 if (event.key === Qt.Key_Up && cursorPosition === 0 && root.editor) {
                     root.editor.navigateUp(root.blockIndex);
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Down && cursorPosition === length && root.editor) {
                     root.editor.navigateDown(root.blockIndex);
                     event.accepted = true;
+                } else if (event.key === Qt.Key_Backspace && length === 0) {
+                    if (root.noteListView) {
+                        root.noteListView.model.removeBlock(root.blockIndex);
+                    }
+                    event.accepted = true;
+                }
+            }
+
+            Connections {
+                target: root.noteListView
+                function onCurrentIndexChanged() {
+                    if (root.noteListView && root.noteListView.currentIndex !== root.blockIndex) {
+                        root.isEditing = false;
+                        textEdit.focus = false;
+                    }
+                }
+                ignoreUnknownSignals: true
+            }
+
+            onActiveFocusChanged: {
+                if (activeFocus) {
+                    if (root.noteListView) {
+                        root.noteListView.currentIndex = root.blockIndex;
+                    }
+                    root.isEditing = true;
                 }
             }
 
@@ -73,6 +155,8 @@ Item {
                         } else {
                             textEdit.cursorPosition = 0;
                         }
+                    } else {
+                        textEdit.focus = false;
                     }
                 }
             }
