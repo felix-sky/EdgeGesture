@@ -2,14 +2,46 @@ cmake_minimum_required(VERSION 3.16)
 
 project(NotesPlugin LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
+# Setup Extra CMake Modules (ECM)
+set(ECM_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extra-cmake-modules")
+list(APPEND CMAKE_MODULE_PATH "${ECM_SOURCE_DIR}/modules" "${ECM_SOURCE_DIR}/find-modules")
+
+# Mock ECMConfig.cmake so find_package(ECM) works for submodule
+set(ECM_DUMMY_DIR "${CMAKE_CURRENT_BINARY_DIR}/ecm_mock")
+file(MAKE_DIRECTORY "${ECM_DUMMY_DIR}")
+file(WRITE "${ECM_DUMMY_DIR}/ECMConfig.cmake" "
+set(ECM_MODULE_PATH \"${ECM_SOURCE_DIR}/modules\" \"${ECM_SOURCE_DIR}/kde-modules\")
+set(ECM_FIND_MODULE_DIR \"${ECM_SOURCE_DIR}/find-modules\")
+set(ECM_KDE_MODULE_DIR \"${ECM_SOURCE_DIR}/kde-modules\")
+# Fix for ECMPoQmTools.cmake looking for ECMQmLoader.cpp.in
+set(ECM_MODULE_DIR \"${ECM_SOURCE_DIR}/modules\")
+")
+file(WRITE "${ECM_DUMMY_DIR}/ECMConfigVersion.cmake" "
+set(PACKAGE_VERSION \"6.23.0\")
+set(PACKAGE_VERSION_COMPATIBLE TRUE)
+set(PACKAGE_VERSION_EXACT TRUE)
+")
+set(ECM_DIR "${ECM_DUMMY_DIR}")
+
+# Pre-load ECM modules to ensure available command
+include("${ECM_SOURCE_DIR}/modules/ECMQueryQt.cmake")
+
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Concurrent Svg Widgets)
 
 set(NOTES_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/plugin/additional/EdgeGesture/Notes")
+
+# Configure KSyntaxHighlighting
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_QCH OFF CACHE BOOL "" FORCE)
+set(KSYNTAXHIGHLIGHTING_USE_GUI ON CACHE BOOL "" FORCE) # Required for QML plugin
+set(KDE_INSTALL_QMLDIR "${NOTES_PLUGIN_OUTPUT_DIR}" CACHE PATH "Install QML modules to plugin dir" FORCE)
+
+add_subdirectory(syntax-highlighting)
 
 set(JKQTMATHTEXT_SOURCES
 	jkqtplotter/lib/jkqtmathtext/jkqtmathtext.cpp
@@ -97,6 +129,7 @@ qt_add_qml_module(notesplugin
 		${CMAKE_CURRENT_SOURCE_DIR}/NoteBlockModel.h ${CMAKE_CURRENT_SOURCE_DIR}/NoteBlockModel.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/MathRenderItem.h ${CMAKE_CURRENT_SOURCE_DIR}/MathRenderItem.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/MathHelper.h ${CMAKE_CURRENT_SOURCE_DIR}/MathHelper.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/CodeHighlighter.h ${CMAKE_CURRENT_SOURCE_DIR}/CodeHighlighter.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/md4c/src/md4c.c
 		${JKQTMATHTEXT_SOURCES}
 		${JKQTMATHTEXT_HEADERS}
@@ -109,6 +142,7 @@ qt_add_qml_module(notesplugin
 target_include_directories(notesplugin PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}
 	${CMAKE_CURRENT_SOURCE_DIR}/jkqtplotter/lib
+	${CMAKE_CURRENT_SOURCE_DIR}/syntax-highlighting/src/lib
 )
 
 target_link_libraries(notesplugin PRIVATE
@@ -119,6 +153,7 @@ target_link_libraries(notesplugin PRIVATE
 	Qt6::Concurrent
 	Qt6::Svg
 	Qt6::Widgets
+	KF6SyntaxHighlighting
 )
 
 set_target_properties(notesplugin PROPERTIES
@@ -129,5 +164,9 @@ set_target_properties(notesplugin PROPERTIES
 add_custom_command(TARGET notesplugin POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 	"${NOTES_PLUGIN_OUTPUT_DIR}"
+	"${CMAKE_BINARY_DIR}/$<CONFIG>/plugin/additional/EdgeGesture/Notes/"
+	# Copy KF6SyntaxHighlighting.dll to the notes plugin directory
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+	"$<TARGET_FILE:KF6SyntaxHighlighting>"
 	"${CMAKE_BINARY_DIR}/$<CONFIG>/plugin/additional/EdgeGesture/Notes/"
 )

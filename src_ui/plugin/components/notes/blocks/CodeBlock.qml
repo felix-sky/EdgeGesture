@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import FluentUI 1.0
+import EdgeGesture.Notes 1.0
 
 Item {
     id: root
@@ -41,13 +42,22 @@ Item {
 
     Component {
         id: viewerComp
-        Text {
+        TextArea {
+            id: viewerTextArea
             width: root.width - 16
             text: root.content
             color: FluTheme.dark ? "#dcdcdc" : "#333333"
             font.family: "Consolas, monospace"
             font.pixelSize: 14
-            textFormat: Text.PlainText
+            readOnly: true
+            background: null
+            wrapMode: TextEdit.Wrap
+
+            CodeHighlighter {
+                textEdit: viewerTextArea
+                language: root.language
+                darkTheme: FluTheme.dark
+            }
 
             MouseArea {
                 anchors.fill: parent
@@ -77,6 +87,7 @@ Item {
     Component {
         id: editorComp
         TextArea {
+            id: editorTextArea
             width: root.width - 16
             text: root.content
             color: FluTheme.dark ? "#dcdcdc" : "#333333"
@@ -84,9 +95,17 @@ Item {
             font.pixelSize: 14
             background: null
             selectByMouse: true
+            wrapMode: TextEdit.Wrap
+
+            CodeHighlighter {
+                textEdit: editorTextArea
+                language: root.language
+                darkTheme: FluTheme.dark
+            }
 
             Keys.onPressed: event => {
-                if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && text === "") {
+                // Delete empty code block on Backspace/Delete
+                if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && text.trim() === "") {
                     if (root.blockIndex >= 0 && root.noteListView && root.noteListView.model) {
                         var idxToRemove = root.blockIndex;
                         var count = root.noteListView.count;
@@ -95,12 +114,14 @@ Item {
                             if (root.editor) {
                                 root.editor.navigateToBlock(idxToRemove - 1, true);
                             }
-                            if (typeof root.noteListView.model.removeBlock === "function")
+                            if (typeof root.noteListView.model.removeBlock === "function") {
                                 root.noteListView.model.removeBlock(idxToRemove);
+                            }
                             event.accepted = true;
                         } else if (count > 1) {
-                            if (typeof root.noteListView.model.removeBlock === "function")
+                            if (typeof root.noteListView.model.removeBlock === "function") {
                                 root.noteListView.model.removeBlock(idxToRemove);
+                            }
                             if (root.editor) {
                                 root.editor.navigateToBlock(0, false);
                             }

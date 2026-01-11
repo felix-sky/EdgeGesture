@@ -104,7 +104,10 @@ add_custom_command(TARGET SettingsUI POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     "${CMAKE_SOURCE_DIR}/src_ui/plugin"
     "$<TARGET_FILE_DIR:SettingsUI>/plugin"
-    COMMENT "Copying UI plugins to build directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "$<TARGET_FILE:KF6SyntaxHighlighting>"
+    "$<TARGET_FILE_DIR:SettingsUI>/bin/org/kde/syntaxhighlighting/KF6SyntaxHighlighting.dll"
+    COMMENT "Copying UI plugins and dependencies to build directory..."
 )
 
 # Build plugin DLLs

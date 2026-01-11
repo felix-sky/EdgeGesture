@@ -10,7 +10,6 @@
 #include <QQmlContext>
 #include <QQuickWindow>
 
-
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -70,6 +69,7 @@ int main(int argc, char *argv[]) {
   // Register decoupled components
   engine.rootContext()->setContextProperty("Plugin", configBridge.plugin());
   engine.addImportPath("./plugin/additional/");
+  engine.addImportPath("./bin");
 
   const QUrl url(u"qrc:/Main.qml"_qs);
   QObject::connect(
