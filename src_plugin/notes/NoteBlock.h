@@ -15,7 +15,8 @@ enum class BlockType {
   TaskList, // New
   Embed,    // New: ![[Note#Section]] as block
   Image,
-  ThematicBreak,
+  ThematicBreak, // Divider
+  Reference,     // New: | text
   Math,
   Table // Future proofing
 };

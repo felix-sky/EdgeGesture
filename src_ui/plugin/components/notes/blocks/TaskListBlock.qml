@@ -141,7 +141,9 @@ Item {
                 // Strikethrough
                 t = t.replace(/~~([^~]+)~~/g, '<s>$1</s>');
                 // Code
-                t = t.replace(/`([^`]+)`/g, '<code style="background:#333; padding:2px 4px; border-radius:3px;">$1</code>');
+                var codeBg = FluTheme.dark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.05)";
+                var codeColor = FluTheme.primaryColor;
+                t = t.replace(/`([^`]+)`/g, '<code style="background-color: ' + codeBg + '; color: ' + codeColor + '; padding: 2px 4px; border-radius: 5px;">$1</code>');
 
                 // Links (Simplified)
                 t = t.replace(/\[\[(.*?)\]\]/g, function (match, p1) {

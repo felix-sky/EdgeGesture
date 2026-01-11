@@ -397,6 +397,12 @@ Item {
                         return "blocks/EmbedBlock.qml";
                     case "image":
                         return "blocks/ImageBlock.qml";
+                    case "list":
+                        return "blocks/ListBlock.qml";
+                    case "reference":
+                        return "blocks/ReferenceBlock.qml";
+                    case "divider":
+                        return "blocks/DividerBlock.qml";
                     default:
                         return "blocks/ParagraphBlock.qml";
                     }

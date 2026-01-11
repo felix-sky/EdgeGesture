@@ -2,13 +2,15 @@
 #include "md4c/src/md4c.h"
 #include <QDebug>
 #include <QRegularExpression>
+#include <QStack>
 
 // Context to pass to md4c callbacks
 struct ParseContext {
   QVector<NoteBlock> blocks;
   NoteBlock currentBlock;
   bool inBlock = false;
-  int inQuoteLevel = 0; // Track nesting for flattening Quotes/Callouts
+  int inQuoteLevel = 0;   // Track nesting for flattening Quotes/Callouts
+  QStack<bool> listStack; // True = Ordered, False = Unordered
   QString currentTextBuffer;
 };
 
@@ -62,16 +64,32 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
     MD_BLOCK_LI_DETAIL *li_detail = (MD_BLOCK_LI_DETAIL *)detail;
     if (li_detail->is_task) {
       newBlock.type = BlockType::TaskList;
-      newBlock.type = BlockType::TaskList;
       // Capture the exact char: 'x', 'X', ' ', '-', '/'
       QChar mark = QChar(li_detail->task_mark);
       newBlock.metadata["taskStatus"] = QString(mark);
       newBlock.metadata["checked"] = (mark == 'x' || mark == 'X');
     } else {
       newBlock.type = BlockType::List;
+      // MD4C doesn't explicitly expose parent OL/UL type here easily without
+      // context But we can check the list char or infer from context if we
+      // tracked it. For now, let's look at the source text logic or just use
+      // metadata if we can't get it. Wait, MD4C separates UL and OL blocks
+      // wrapping LI. We need to track the parent block type in context? Or we
+      // can cheat and look at the first char of the content if we have offsets?
+      // Better: let's track nesting in `enter_block` for UL/OL.
     }
     break;
   }
+  case MD_BLOCK_UL:
+    // We could use this to set a context flag "inUL"
+    ctx->listStack.push(false); // Unordered
+    break;
+  case MD_BLOCK_OL:
+    ctx->listStack.push(true); // Ordered
+    break;
+  case MD_BLOCK_HR:
+    newBlock.type = BlockType::ThematicBreak;
+    break;
   case MD_BLOCK_P:
     newBlock.type = BlockType::Paragraph;
     break;
@@ -93,7 +111,14 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
                                 void *userdata) {
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
 
+  if (type == MD_BLOCK_UL || type == MD_BLOCK_OL) {
+    if (!ctx->listStack.isEmpty())
+      ctx->listStack.pop();
+    return 0;
+  }
+
   // Quote Logic
+  // ... (rest of function)
   if (type == MD_BLOCK_QUOTE) {
     if (ctx->inQuoteLevel > 0) {
       ctx->inQuoteLevel--;
@@ -145,8 +170,16 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
   case MD_BLOCK_LI:
     shouldPush = true;
     if (ctx->inBlock) {
+      // List Type Handling
+      if (ctx->currentBlock.type == BlockType::List) {
+        bool isOrdered = !ctx->listStack.isEmpty() && ctx->listStack.top();
+        ctx->currentBlock.metadata["listType"] =
+            isOrdered ? "ordered" : "bullet";
+      }
+
       // Manual check for extended task statuses that md4c missed
       if (ctx->currentBlock.type == BlockType::List) {
+        // ... (existing task check)
         QString cleanContent = ctx->currentTextBuffer.trimmed();
         QRegularExpression regex(R"(^\[(.)\]\s+(.*)$)");
         QRegularExpressionMatch match = regex.match(cleanContent);
@@ -203,11 +236,25 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
                << ctx->currentBlock.content;
     } else {
       qDebug() << "MarkdownParser: No embed/image match. Standard Paragraph.";
+
+      // Check for Reference Block: starts with `| `
+      // Note: Table rows also start with |, but md4c parses tables if enabled.
+      // If we are here in P block, it might be a standalone line.
+      // However, a single line `| text` is often treated as a paragraph if not
+      // a table.
+      if (clean.startsWith("| ")) {
+        ctx->currentBlock.type = BlockType::Reference;
+        // content is the rest
+        ctx->currentBlock.content = clean.mid(2).trimmed(); // Remove "| "
+      }
     }
 
     shouldPush = true;
     break;
   }
+  case MD_BLOCK_HR: // Ensure we push HR blocks
+    shouldPush = true;
+    break;
   case MD_BLOCK_H:
   case MD_BLOCK_CODE:
     shouldPush = true;

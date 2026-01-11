@@ -195,9 +195,10 @@ Item {
                 t = t.replace(/~~([^~]+)~~/g, '<s>$1</s>');
 
                 // Inline code: `code` -> <code>code</code>
-                t = t.replace(/`([^`]+)`/g, '<code style="background:#333; padding:2px 4px; border-radius:3px;">$1</code>');
+                var codeBg = FluTheme.dark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.05)";
+                var codeColor = FluTheme.dark ? "rgba(0, 0, 0)" : "rgba(255, 255, 255)";
+                t = t.replace(/`([^`]+)`/g, '<code style="background-color: ' + codeBg + '; color: ' + codeColor + '; padding: 2px 4px; border-radius: 5px;">$1</code>');
 
-                // Restore math placeholders with actual rendered content (C++)
                 t = MathHelper.restoreMathPlaceholders(t);
 
                 return t;

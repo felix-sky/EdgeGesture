@@ -40,6 +40,10 @@ QVariant NoteBlockModel::data(const QModelIndex &index, int role) const {
       return "embed";
     case BlockType::Image:
       return "image";
+    case BlockType::ThematicBreak:
+      return "divider";
+    case BlockType::Reference:
+      return "reference";
     case BlockType::Paragraph:
     default:
       return "paragraph";
@@ -100,6 +104,81 @@ void NoteBlockModel::updateBlock(int row, const QString &text) {
   if (row < 0 || row >= m_blocks.size())
     return;
 
+  // Check if this is a paragraph being converted to a code block
+  // Pattern: ```language (e.g., ```python, ```cpp, ```js)
+  if (m_blocks[row].type == BlockType::Paragraph) {
+    static QRegularExpression codeBlockTrigger(R"(^```(\w*)$)");
+    QRegularExpressionMatch match = codeBlockTrigger.match(text.trimmed());
+    if (match.hasMatch()) {
+      // Convert to code block
+      m_blocks[row].type = BlockType::Code;
+      m_blocks[row].language = match.captured(1); // Language (may be empty)
+      m_blocks[row].content = ""; // Empty content, ready for code
+      QVector<int> roles = {TypeRole, ContentRole, LanguageRole};
+      emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
+      return;
+    }
+  }
+
+  // Check for conversion from Paragraph to other types
+  if (m_blocks[row].type == BlockType::Paragraph) {
+    QString trimmed = text.trimmed();
+
+    // Reference: | text
+    if (trimmed.startsWith("| ")) {
+      m_blocks[row].type = BlockType::Reference;
+      m_blocks[row].content = trimmed.mid(2);
+      QVector<int> roles = {TypeRole, ContentRole};
+      emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
+      return;
+    }
+
+    // Divider: ---
+    if (trimmed == "---") {
+      m_blocks[row].type = BlockType::ThematicBreak;
+      m_blocks[row].content = "";
+      QVector<int> roles = {TypeRole, ContentRole};
+      emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
+      return;
+    }
+
+    // Unordered List: * text or - text
+    static QRegularExpression ulRegex(R"(^[\*\-]\s(.*)$)");
+    QRegularExpressionMatch ulMatch = ulRegex.match(trimmed);
+    if (ulMatch.hasMatch()) {
+      m_blocks[row].type = BlockType::List;
+      m_blocks[row].content = ulMatch.captured(1);
+      m_blocks[row].metadata["listType"] = "bullet";
+      QVector<int> roles = {TypeRole, ContentRole, MetadataRole};
+      emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
+      return;
+    }
+
+    // Ordered List: 1. text
+    static QRegularExpression olRegex(R"(^(\d+)\.\s(.*)$)");
+    QRegularExpressionMatch olMatch = olRegex.match(trimmed);
+    if (olMatch.hasMatch()) {
+      m_blocks[row].type = BlockType::List;
+      m_blocks[row].content = olMatch.captured(2);
+      m_blocks[row].metadata["listType"] = "ordered";
+      QVector<int> roles = {TypeRole, ContentRole, MetadataRole};
+      emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
+      return;
+    }
+
+    // Heading: # Text
+    static QRegularExpression hRegex(R"(^(#{1,6})\s(.*)$)");
+    QRegularExpressionMatch hMatch = hRegex.match(trimmed);
+    if (hMatch.hasMatch()) {
+      m_blocks[row].type = BlockType::Heading;
+      m_blocks[row].level = hMatch.captured(1).length();
+      m_blocks[row].content = hMatch.captured(2);
+      QVector<int> roles = {TypeRole, ContentRole, LevelRole};
+      emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
+      return;
+    }
+  }
+
   // Direct update for responsiveness
   m_blocks[row].content = text;
   QVector<int> roles = {ContentRole};
@@ -134,6 +213,10 @@ void NoteBlockModel::insertBlock(int row, const QString &typeString,
     block.type = BlockType::Embed;
   else if (typeString == "image")
     block.type = BlockType::Image;
+  else if (typeString == "divider")
+    block.type = BlockType::ThematicBreak;
+  else if (typeString == "reference")
+    block.type = BlockType::Reference;
   else
     block.type = BlockType::Paragraph;
 
@@ -235,14 +318,26 @@ QString NoteBlockModel::getMarkdown() const {
       result.append(QString("![[%1]]\n\n").arg(block.content));
       break;
     case BlockType::Image:
+
       // Identify if it was likely an obsidian link (no path separation) or md
-      // link For simplicity, we default to obsidian style ![[image.png]] if it
-      // looks like a filename parser stripped syntax, content is just the
-      // path/name.
+      // link
       result.append(QString("![[%1]]\n\n").arg(block.content));
       break;
-    case BlockType::List:
-      result.append("- " + block.content + "\n");
+    case BlockType::List: {
+      // Check metadata for ordered vs unordered
+      bool isOrdered = block.metadata["listType"].toString() == "ordered";
+      if (isOrdered) {
+        // We could track index, but for now simple reconstruction:
+        result.append("1. " + block.content + "\n");
+      } else {
+        result.append("* " + block.content + "\n");
+      }
+    } break;
+    case BlockType::Reference:
+      result.append("| " + block.content + "\n\n");
+      break;
+    case BlockType::ThematicBreak:
+      result.append("---\n\n");
       break;
     default:
       result.append(block.content + "\n\n");
