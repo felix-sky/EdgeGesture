@@ -1,3 +1,9 @@
 [submodule "jkqtplotter"]
 	path = src_plugin/notes/jkqtplotter
 	url = https://github.com/jkriege2/JKQTPlotter.git
+[submodule "src_plugin/notes/syntax-highlighting"]
+	path = src_plugin/notes/syntax-highlighting
+	url = https://invent.kde.org/frameworks/syntax-highlighting.git
+[submodule "src_plugin/notes/extra-cmake-modules"]
+	path = src_plugin/notes/extra-cmake-modules
+	url = https://invent.kde.org/frameworks/extra-cmake-modules.git
