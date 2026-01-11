@@ -1,0 +1,3 @@
+[submodule "jkqtplotter"]
+	path = src_plugin/notes/jkqtplotter
+	url = https://github.com/jkriege2/JKQTPlotter.git
