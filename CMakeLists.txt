@@ -39,7 +39,7 @@ set(FLUENTUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(src_ui/FluentUI)
 
-add_executable(GestureEngine 
+add_executable(GestureEngine
     "src_engine/main.cpp"
     "src_engine/core/EngineCore.cpp" "src_engine/core/EngineCore.h"
     "src_engine/input/InputWindow.cpp" "src_engine/input/InputWindow.h"
@@ -47,14 +47,14 @@ add_executable(GestureEngine
     "src_engine/ui/Visualizer.cpp" "src_engine/ui/Visualizer.h"
     "src_engine/core/ConfigManager.cpp" "src_engine/core/ConfigManager.h"
     "src_engine/actions/ActionDispatcher.cpp" "src_engine/actions/ActionDispatcher.h"
-) 
+)
 
 target_link_libraries(GestureEngine PRIVATE nlohmann_json::nlohmann_json)
-target_include_directories(GestureEngine PRIVATE 
-    src_engine 
-    src_engine/core 
-    src_engine/input 
-    src_engine/actions 
+target_include_directories(GestureEngine PRIVATE
+    src_engine
+    src_engine/core
+    src_engine/input
+    src_engine/actions
     src_engine/ui
 )
 
@@ -69,9 +69,9 @@ endif()
 set_target_properties(GestureEngine PROPERTIES AUTOMOC OFF AUTORCC OFF AUTOUIC OFF)
 
 
-file(GLOB UI_SRCS 
-    "src_ui/*.cpp" "src_ui/*.h" 
-    "src_ui/utils/*.cpp" "src_ui/utils/*.h" 
+file(GLOB UI_SRCS
+    "src_ui/*.cpp" "src_ui/*.h"
+    "src_ui/utils/*.cpp" "src_ui/utils/*.h"
     "src_ui/utils/config/*.cpp" "src_ui/utils/config/*.h"
     "src_ui/utils/config/services/*.cpp" "src_ui/utils/config/services/*.h"
     "src_ui/utils/config/system/*.cpp" "src_ui/utils/config/system/*.h"
@@ -79,10 +79,10 @@ file(GLOB UI_SRCS
     "src_ui/utils/config/bridge/*.cpp" "src_ui/utils/config/bridge/*.h"
 )
 
-set(UI_RESOURCES "src_ui/resources.qrc") 
+set(UI_RESOURCES "src_ui/resources.qrc")
 
-add_executable(SettingsUI 
-    ${UI_SRCS} 
+add_executable(SettingsUI
+    ${UI_SRCS}
     ${UI_RESOURCES}
     "src_ui/app_icon.rc"
 )

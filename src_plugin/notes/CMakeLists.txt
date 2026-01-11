@@ -7,77 +7,127 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Concurrent Svg)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Concurrent Svg Widgets)
 
-# Plugin output directory
 set(NOTES_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/plugin/additional/EdgeGesture/Notes")
 
+set(JKQTMATHTEXT_SOURCES
+	jkqtplotter/lib/jkqtmathtext/jkqtmathtext.cpp
+	jkqtplotter/lib/jkqtmathtext/jkqtmathtexttools.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextnodetools.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextnoopnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtexttextnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextsymbolnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextwhitespacenode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtexthorizontallistnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextverticallistnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextbracenode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextdecoratednode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextfracnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextinstructionnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextboxinstructionnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextmatrixnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextmodifyenvironmentnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextsqrtnode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextsubsupernode.cpp
+	jkqtplotter/lib/jkqtmathtext/nodes/jkqtmathtextverbatimnode.cpp
+	jkqtplotter/lib/jkqtmathtext/parsers/jkqtmathtextparser.cpp
+	jkqtplotter/lib/jkqtmathtext/parsers/jkqtmathtextlatexparser.cpp
+)
+
+set(JKQTMATHTEXT_HEADERS
+	jkqtplotter/lib/jkqtmathtext/jkqtmathtext.h
+	jkqtplotter/lib/jkqtmathtext/jkqtmathtext_imexport.h
+	jkqtplotter/lib/jkqtmathtext/jkqtmathtexttools.h
+)
+
+set(JKQTCOMMON_SOURCES
+	jkqtplotter/lib/jkqtcommon/jkqtpcodestructuring.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpstringtools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpmathtools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpdrawingtools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpenhancedpainter.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpdebuggingtools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpcachingtools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpgeometrytools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpconcurrencytools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpexpected.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpcsstools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqttools.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpicons.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtphighrestimer.cpp
+	jkqtplotter/lib/jkqtcommon/jkqtpbasicimagetools.cpp
+)
+
+set(JKQTCOMMON_HEADERS
+	jkqtplotter/lib/jkqtcommon/jkqtcommon_imexport.h
+	jkqtplotter/lib/jkqtcommon/jkqtpcodestructuring.h
+	jkqtplotter/lib/jkqtcommon/jkqtpstringtools.h
+	jkqtplotter/lib/jkqtcommon/jkqtpmathtools.h
+	jkqtplotter/lib/jkqtcommon/jkqtpdrawingtools.h
+	jkqtplotter/lib/jkqtcommon/jkqtpenhancedpainter.h
+	jkqtplotter/lib/jkqtcommon/jkqtpdebuggingtools.h
+	jkqtplotter/lib/jkqtcommon/jkqtpcachingtools.h
+	jkqtplotter/lib/jkqtcommon/jkqtpgeometrytools.h
+	jkqtplotter/lib/jkqtcommon/jkqtpconcurrencytools.h
+	jkqtplotter/lib/jkqtcommon/jkqtpexpected.h
+	jkqtplotter/lib/jkqtcommon/jkqtpcsstools.h
+	jkqtplotter/lib/jkqtcommon/jkqttools.h
+	jkqtplotter/lib/jkqtcommon/jkqtpicons.h
+	jkqtplotter/lib/jkqtcommon/jkqtphighrestimer.h
+	jkqtplotter/lib/jkqtcommon/jkqtpbasicimagetools.h
+)
+
+set(JKQTMATHTEXT_RESOURCES
+	jkqtplotter/lib/jkqtmathtext/resources/xits.qrc
+	jkqtplotter/lib/jkqtmathtext/resources/firamath.qrc
+)
+
 qt_add_qml_module(notesplugin
-    URI EdgeGesture.Notes
-    VERSION 1.0
-    PLUGIN_TARGET notesplugin
-    OUTPUT_DIRECTORY ${NOTES_PLUGIN_OUTPUT_DIR}
-    SOURCES
-        NotesModel.h NotesModel.cpp
-        NotesFileHandler.h NotesFileHandler.cpp
-        NotesIndex.h NotesIndex.cpp
-        MarkdownParser.h MarkdownParser.cpp
-        NoteBlockModel.h NoteBlockModel.cpp
-        MathImageProvider.h MathImageProvider.cpp
-        MathRender.h MathRender.cpp
-        md4c/src/md4c.c
+	URI EdgeGesture.Notes
+	VERSION 1.0
+	PLUGIN_TARGET notesplugin
+	OUTPUT_DIRECTORY ${NOTES_PLUGIN_OUTPUT_DIR}
+	SOURCES
+	        ${CMAKE_CURRENT_SOURCE_DIR}/NotesModel.h ${CMAKE_CURRENT_SOURCE_DIR}/NotesModel.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/NotesFileHandler.h ${CMAKE_CURRENT_SOURCE_DIR}/NotesFileHandler.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/NotesIndex.h ${CMAKE_CURRENT_SOURCE_DIR}/NotesIndex.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/MarkdownParser.h ${CMAKE_CURRENT_SOURCE_DIR}/MarkdownParser.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/NoteBlockModel.h ${CMAKE_CURRENT_SOURCE_DIR}/NoteBlockModel.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/MathRenderItem.h ${CMAKE_CURRENT_SOURCE_DIR}/MathRenderItem.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/MathHelper.h ${CMAKE_CURRENT_SOURCE_DIR}/MathHelper.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/md4c/src/md4c.c
+		${JKQTMATHTEXT_SOURCES}
+		${JKQTMATHTEXT_HEADERS}
+		${JKQTCOMMON_SOURCES}
+		${JKQTCOMMON_HEADERS}
+	RESOURCES
+	        ${JKQTMATHTEXT_RESOURCES}
+)
+
+target_include_directories(notesplugin PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}/jkqtplotter/lib
 )
 
 target_link_libraries(notesplugin PRIVATE
-    Qt6::Core
-    Qt6::Gui
-    Qt6::Qml
-    Qt6::Quick
-    Qt6::Concurrent
-    Qt6::Svg
-    LaTeX
+	Qt6::Core
+	Qt6::Gui
+	Qt6::Qml
+	Qt6::Quick
+	Qt6::Concurrent
+	Qt6::Svg
+	Qt6::Widgets
 )
 
-# MicroTeX configuration
-set(QT ON CACHE BOOL "Enable Qt build for MicroTeX" FORCE)
-
-include(FetchContent)
-FetchContent_Declare(
-    tinyxml2
-    GIT_REPOSITORY https://github.com/leethomason/tinyxml2.git
-    GIT_TAG 9.0.0
-)
-FetchContent_MakeAvailable(tinyxml2)
-
-add_subdirectory(microtex)
-
-# Ensure the plugin is built as a shared library
 set_target_properties(notesplugin PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY ${NOTES_PLUGIN_OUTPUT_DIR}
-    RUNTIME_OUTPUT_DIRECTORY ${NOTES_PLUGIN_OUTPUT_DIR}
+	LIBRARY_OUTPUT_DIRECTORY ${NOTES_PLUGIN_OUTPUT_DIR}
+	RUNTIME_OUTPUT_DIRECTORY ${NOTES_PLUGIN_OUTPUT_DIR}
 )
 
-# Copy plugin DLLs to SettingsUI output directory after compilation
-# Access parent binary directory to find SettingsUI location
 add_custom_command(TARGET notesplugin POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${NOTES_PLUGIN_OUTPUT_DIR}"
-    "${CMAKE_BINARY_DIR}/$<CONFIG>/plugin/additional/EdgeGesture/Notes/"
-    COMMENT "Copying Notes plugin to build directory..."
-)
-
-# Copy MicroTeX res folder to the executable directory for runtime access
-add_custom_command(TARGET notesplugin POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${CMAKE_CURRENT_SOURCE_DIR}/microtex/res"
-    "${CMAKE_BINARY_DIR}/res"
-    COMMENT "Copying MicroTeX resources to build directory..."
-)
-
-# Also copy to the config-specific output directory
-add_custom_command(TARGET notesplugin POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${CMAKE_CURRENT_SOURCE_DIR}/microtex/res"
-    "${CMAKE_BINARY_DIR}/$<CONFIG>/res"
-    COMMENT "Copying MicroTeX resources to config build directory..."
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+	"${NOTES_PLUGIN_OUTPUT_DIR}"
+	"${CMAKE_BINARY_DIR}/$<CONFIG>/plugin/additional/EdgeGesture/Notes/"
 )

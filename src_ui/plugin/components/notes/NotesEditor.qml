@@ -43,6 +43,23 @@ Item {
     }
     property bool _cursorAtEnd: true // Internal: cursor position for next focus
 
+    // Add helper to check brightness of background color
+    function isDarkColor(c) {
+        if (!c)
+            return true; // Default to dark if undefined
+        if (c.charAt(0) !== '#')
+            return true;
+        var r = parseInt(c.substr(1, 2), 16);
+        var g = parseInt(c.substr(3, 2), 16);
+        var b = parseInt(c.substr(5, 2), 16);
+        var yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+        return (yiq < 128);
+    }
+
+    property color contrastColor: isDarkColor(currentColor) ? "#FFFFFF" : "#202020"
+    property color secondaryContrastColor: isDarkColor(currentColor) ? "#CCCCCC" : "#444444"
+    property color editBackgroundColor: isDarkColor(currentColor) ? Qt.rgba(0, 0, 0, 0.2) : Qt.rgba(0, 0, 0, 0.05)
+
     // Navigate to previous block (called from block when arrow up at first line)
     function goToPreviousBlock(fromIndex) {
         if (fromIndex > 0) {
@@ -126,7 +143,7 @@ Item {
                 height: 32
                 width: 180
                 radius: 16
-                color: Qt.rgba(1, 1, 1, 0.2)
+                color: isDarkColor(currentColor) ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(0, 0, 0, 0.05)
                 anchors.left: parent.left
                 anchors.leftMargin: 15
                 anchors.verticalCenter: parent.verticalCenter
@@ -140,7 +157,7 @@ Item {
                     TextInput {
                         id: titleInput
                         text: noteTitle
-                        color: "#FFF"
+                        color: contrastColor
                         font.pixelSize: 13
                         selectByMouse: true
                         Layout.fillWidth: true
@@ -169,7 +186,7 @@ Item {
                 FluIconButton {
                     iconSource: FluentIcons.Save
                     iconSize: 16
-                    iconColor: "white"
+                    iconColor: contrastColor
                     onClicked: {
                         saveNote();
                     }
@@ -182,7 +199,7 @@ Item {
                 FluIconButton {
                     iconSource: FluentIcons.Tag
                     iconSize: 16
-                    iconColor: "white"
+                    iconColor: contrastColor
                     onClicked: {
                         editorPage.addTagRequested(notePath);
                     }
@@ -195,14 +212,14 @@ Item {
                 FluIconButton {
                     iconSource: FluentIcons.More
                     iconSize: 16
-                    iconColor: "white"
+                    iconColor: contrastColor
                     onClicked: colorPickerMenu.open()
                 }
 
                 FluIconButton {
                     iconSource: FluentIcons.ChromeClose
                     iconSize: 16
-                    iconColor: "white"
+                    iconColor: contrastColor
                     onClicked: {
                         saveNote(); // Auto-save on close
                         editorPage.closeRequested();

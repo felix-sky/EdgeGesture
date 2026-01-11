@@ -86,50 +86,13 @@ Item {
                 var hasValidFolder = root.folderPath && root.folderPath.length > 0;
                 var basePath = hasValidFolder ? ("file:///" + root.folderPath.replace(/\\/g, "/") + "/") : "";
 
-                // Math: $$...$$ (Display) and $...$ (Inline) -> SVG
-                // We perform this early to avoid * or _ inside math being parsed as italic/bold
-
-                // Get current font size for dynamic sizing
+                // Math: $$...$$ (Display) and $...$ (Inline) -> PNG via JKQTMathText
+                // Process math early to avoid * or _ inside math being parsed as italic/bold
+                // Uses C++ regex processing for better performance
                 var currentFontSize = root.getFontSize();
-                var darkMode = FluTheme.dark;
-
-                // Unified math processing function
-                function processMath(latex, isBlock) {
-                    var colorName = darkMode ? "white" : "black";
-
-                    if (isBlock) {
-                        // Block math: render at 1.5x font size, no height constraint
-                        // This allows complex formulas (matrices, fractions) to display properly
-                        var blockRenderSize = currentFontSize * 1.5;
-                        var svgXml = MathRender.renderToSvg(latex.trim(), blockRenderSize, colorName);
-                        if (svgXml && svgXml.length > 0) {
-                            var dataUri = "data:image/svg+xml;base64," + Qt.btoa(svgXml);
-                            return '<br><img src="' + dataUri + '" style="display:block;margin-left:auto;margin-right:auto;" /><br>';
-                        }
-                    } else {
-                        // Inline math: render at 2x for HiDPI, constrain height to font size * 1.1
-                        var scaleFactor = 2.0;
-                        var renderSize = currentFontSize * scaleFactor;
-                        var displayHeight = currentFontSize * 1.1;
-                        var svgXml = MathRender.renderToSvg(latex.trim(), renderSize, colorName);
-                        if (svgXml && svgXml.length > 0) {
-                            var dataUri = "data:image/svg+xml;base64," + Qt.btoa(svgXml);
-                            return '<img src="' + dataUri + '" height="' + displayHeight + '" style="vertical-align:text-bottom;" />';
-                        }
-                    }
-                    // Fallback: return original if render failed
-                    return isBlock ? ("$$" + latex + "$$") : ("$" + latex + "$");
-                }
-
-                // Block Math $$...$$
-                t = t.replace(/\$\$([\s\S]+?)\$\$/g, function (match, p1) {
-                    return processMath(p1, true);
-                });
-
-                // Inline Math $...$
-                t = t.replace(/\$([^\$\n]+?)\$/g, function (match, p1) {
-                    return processMath(p1, false);
-                });
+                var currentFontSize = root.getFontSize();
+                var darkMode = root.editor ? root.editor.isDarkColor(root.editor.currentColor) : FluTheme.dark;
+                t = MathHelper.processMathToPlaceholders(t, currentFontSize, darkMode);
 
                 // Obsidian Embed syntax: ![[...]]
                 // - If ends with image extension (.png, .jpg, .jpeg, .gif, .bmp, .svg, .webp) -> Image embed
@@ -167,15 +130,15 @@ Item {
 
                         // Image not found - show error message
                         if (!imageFound) {
-                            var errorBg = darkMode ? "#3d2020" : "#ffeeee";
-                            var errorBorder = darkMode ? "#ff6b6b" : "#ff4444";
-                            var errorText = darkMode ? "#ff9999" : "#cc0000";
-                            return '<span style="display:inline-block;background:' + errorBg + ';border:1px solid ' + errorBorder + ';border-radius:4px;padding:4px 8px;color:' + errorText + ';font-size:12px;">找不到 "' + imageName + '"。</span>';
+                            var errorBg = darkMode ? "rgba(0,0,0,0.3)" : "rgba(255,0,0,0.05)";
+                            var errorText = darkMode ? "#ffa39e" : "#d9363e";
+                            return '<div style="margin: 10px 0; padding: 12px; text-align: center; background:' + errorBg + '; border-radius: 4px; color:' + errorText + '; font-size:14px; font-family: Segoe UI;">' + '找不到 “' + imageName + '”' + '</div>';
                         }
 
                         // Only encode spaces - Qt handles raw Unicode paths better
-                        src = src.replace(/ /g, "%20");
-                        return '<img src="' + src + '" width="320">';
+                        // But we need to handle special chars if they break HTML
+                        var imgPath = "file:///" + fullPath;
+                        return '<img src="' + imgPath + '" width="' + displayWidth + '" style="vertical-align: middle;">';
                     } else {
                         // Handle section/chapter embed (transclude)
                         // Format: ![[NoteName]] or ![[NoteName#Section]] or ![[NoteName#^block-id]]
@@ -188,12 +151,16 @@ Item {
                         }
 
                         // Style variables
-                        var embedBg = darkMode ? "#2d3748" : "#f0f4f8";
-                        var embedBorder = darkMode ? "#4a5568" : "#cbd5e0";
+                        // Use hex with alpha for Qt table backgrounds if needed
+                        var embedBg = darkMode ? "#4d000000" : "#0d000000"; // ~30% alpha black (dark mode)
+                        var embedBorderColor = darkMode ? "#60ccff" : "#0099cc"; // Cyan/Teal accent
                         var embedText = darkMode ? "#e2e8f0" : "#2d3748";
-                        var errorBg = darkMode ? "#3d2020" : "#ffeeee";
-                        var errorBorder = darkMode ? "#ff6b6b" : "#ff4444";
-                        var errorText = darkMode ? "#ff9999" : "#cc0000";
+                        var titleColor = darkMode ? "#60ccff" : "#0099cc"; // Match border/accent color for title (Callout style)
+                        var iconColor = darkMode ? "#a0a0a0" : "#808080";
+
+                        // Error styles
+                        var errorBg = darkMode ? "rgba(0,0,0,0.3)" : "rgba(255,0,0,0.05)";
+                        var errorText = darkMode ? "#ff7875" : "#d9363e";
 
                         // Find the note path
                         var targetNotePath = "";
@@ -209,14 +176,24 @@ Item {
                             }
                         }
 
+                        // Helper for error creation
+                        function createError(msg) {
+                            return '<div style="margin: 8px 0; padding: 12px; text-align: center; background:' + errorBg + '; border-radius: 4px; color:' + errorText + '; font-size:13px; font-family: Segoe UI;">' + msg + '</div>';
+                        }
+
+                        // Helper: Create Table-based Callout-like Block for robust background unity
+                        function createCalloutEmbed(title, content) {
+                            // Use safe dark tint for background to ensure visibility
+                            var bgCol = darkMode ? "#4d000000" : "#0d000000";
+                            // Using a 2-column table to simulate the Left Border + Content Box
+                            // Cell 1: 4px wide, colored background (The Border)
+                            // Cell 2: Content with background
+                            return '<table width="100%" cellspacing="0" cellpadding="0" style="margin: 12px 0;">' + '<tr>' + '<td width="4" bgcolor="' + embedBorderColor + '"></td>' + '<td bgcolor="' + bgCol + '" style="padding: 10px 10px 10px 15px;">' + '<div style="color: ' + titleColor + '; font-size: 16px; font-weight: 600; margin-bottom: 6px;">' + title + '</div>' + '<div style="color: ' + embedText + '; font-size: 14px; line-height: 1.6;">' + content + '</div>' + '</td>' + '</tr>' + '</table>';
+                        }
+
                         if (sectionPart !== "" && targetNotePath !== "") {
                             // Section or block reference embed
                             var extractedContent = "";
-
-                            // Theme-aware accent color
-                            var accentColor = darkMode ? "#7c3aed" : "#8b5cf6";
-                            var headerBg = darkMode ? "#1e1b4b" : "#ede9fe";
-                            var headerText = darkMode ? "#c4b5fd" : "#5b21b6";
 
                             if (sectionPart.startsWith('^')) {
                                 // Block embed - extract block by ID
@@ -226,9 +203,9 @@ Item {
                                 }
 
                                 if (extractedContent && extractedContent.length > 0) {
-                                    return '<div style="background:' + embedBg + ';border-left:4px solid ' + accentColor + ';border-radius:8px;margin:8px 0;overflow:hidden;">' + '<div style="background:' + headerBg + ';padding:6px 12px;font-size:11px;color:' + headerText + ';">📎 <b>' + pagePart + '</b> › ' + blockId + '</div>' + '<div style="padding:10px 14px;color:' + embedText + ';line-height:1.5;">' + extractedContent + '</div></div>';
+                                    return createCalloutEmbed(pagePart + ' > ' + blockId, extractedContent);
                                 } else {
-                                    return '<span style="display:inline-block;background:' + errorBg + ';border-left:3px solid ' + errorBorder + ';border-radius:4px;padding:4px 8px;color:' + errorText + ';font-size:12px;">在 <b>' + pagePart + '</b> 中未找到 "' + blockId + '"</span>';
+                                    return createError('Block not found: <b>' + blockId + '</b>');
                                 }
                             } else {
                                 // Section embed - extract section by heading
@@ -237,34 +214,24 @@ Item {
                                 }
 
                                 if (extractedContent && extractedContent.length > 0) {
-                                    return '<div style="background:' + embedBg + ';border-left:4px solid ' + accentColor + ';border-radius:8px;margin:8px 0;overflow:hidden;">' + '<div style="background:' + headerBg + ';padding:6px 12px;font-size:11px;color:' + headerText + ';">📑 <b>' + pagePart + '</b> › ' + sectionPart + '</div>' + '<div style="padding:10px 14px;color:' + embedText + ';line-height:1.5;">' + extractedContent + '</div></div>';
+                                    return createCalloutEmbed(pagePart + ' > ' + sectionPart, extractedContent);
                                 } else {
-                                    return '<span style="display:inline-block;background:' + errorBg + ';border-left:3px solid ' + errorBorder + ';border-radius:4px;padding:4px 8px;color:' + errorText + ';font-size:12px;">在 <b>' + pagePart + '</b> 中未找到 "' + sectionPart + '"</span>';
+                                    return createError('Section not found: <b>' + sectionPart + '</b>');
                                 }
                             }
                         } else if (sectionPart !== "" && targetNotePath === "") {
-                            // Note not found
-                            if (sectionPart.startsWith('^')) {
-                                return '<span style="display:inline-block;background:' + errorBg + ';border-left:3px solid ' + errorBorder + ';border-radius:4px;padding:4px 8px;color:' + errorText + ';font-size:12px;">在 <b>' + pagePart + '</b> 中未找到 "' + sectionPart.substring(1) + '"</span>';
-                            } else {
-                                return '<span style="display:inline-block;background:' + errorBg + ';border-left:3px solid ' + errorBorder + ';border-radius:4px;padding:4px 8px;color:' + errorText + ';font-size:12px;">在 <b>' + pagePart + '</b> 中未找到 "' + sectionPart + '"</span>';
-                            }
+                            return createError('Note not found: <b>' + pagePart + '</b>');
                         } else {
-                            // Full note embed (no section specified)
-                            var noteAccent = darkMode ? "#0ea5e9" : "#0284c7";
-                            var noteHeaderBg = darkMode ? "#0c4a6e" : "#e0f2fe";
-                            var noteHeaderText = darkMode ? "#7dd3fc" : "#0369a1";
-
+                            // Full note embed
                             if (targetNotePath !== "" && root.notesFileHandler) {
                                 var noteData = root.notesFileHandler.readNote(targetNotePath);
                                 var noteContent = noteData.content || "";
                                 if (noteContent.length > 0) {
-                                    // Limit preview length for full embeds
                                     var preview = noteContent.length > 500 ? noteContent.substring(0, 500) + "..." : noteContent;
-                                    return '<div style="background:' + embedBg + ';border-left:4px solid ' + noteAccent + ';border-radius:8px;margin:8px 0;overflow:hidden;">' + '<div style="background:' + noteHeaderBg + ';padding:6px 12px;font-size:11px;color:' + noteHeaderText + ';">📄 <b>' + pagePart + '</b></div>' + '<div style="padding:10px 14px;color:' + embedText + ';line-height:1.5;">' + preview + '</div></div>';
+                                    return createCalloutEmbed(pagePart, preview);
                                 }
                             }
-                            return '<span style="display:inline-block;background:' + embedBg + ';border-left:3px solid ' + embedBorder + ';border-radius:4px;padding:4px 8px;color:' + embedText + ';font-size:12px;">📄 嵌入: ' + pagePart + '</span>';
+                            return createError('Embed not found: <b>' + pagePart + '</b>');
                         }
                     }
                 });
@@ -332,10 +299,13 @@ Item {
                 // Inline code: `code` -> <code>code</code>
                 t = t.replace(/`([^`]+)`/g, '<code style="background:#333; padding:2px 4px; border-radius:3px;">$1</code>');
 
+                // Restore math placeholders with actual rendered content (C++)
+                t = MathHelper.restoreMathPlaceholders(t);
+
                 return t;
             }
             wrapMode: Text.Wrap
-            color: FluTheme.dark ? "#cccccc" : "#222222"
+            color: root.editor ? root.editor.contrastColor : (FluTheme.dark ? "#cccccc" : "#222222")
             font.pixelSize: getFontSize()
             font.weight: getFontWeight()
             font.family: "Segoe UI"
@@ -466,7 +436,7 @@ Item {
 
     Component {
         id: editorComp
-        FluMultilineTextBox {
+        FluentEditorArea {
             id: editorArea
             width: root.width
             text: {
@@ -476,14 +446,23 @@ Item {
                 return root.content;
             }
 
-            // Override the default Enter behavior of FluMultilineTextBox
+            // Custom color properties passed to FluentEditorArea
+            customTextColor: root.editor ? root.editor.contrastColor : (FluTheme.dark ? "#FFFFFF" : "#000000")
+            customSelectionColor: FluTheme.primaryColor
+            customBackgroundColor: root.editor ? root.editor.editBackgroundColor : "transparent"
+
+            font.pixelSize: getFontSize()
+            font.weight: getFontWeight()
+            font.family: "Segoe UI"
+
+            // Override the default Enter behavior
             Keys.onReturnPressed: event => handleEnter(event)
             Keys.onEnterPressed: event => handleEnter(event)
 
             // Arrow key navigation between blocks
             Keys.onUpPressed: event => {
                 // Check if cursor is at the first line
-                var lineHeight = font.pixelSize * 1.2; // Approximate line height
+                var lineHeight = font.pixelSize * 1.5; // Approximate line height
                 var isFirstLine = cursorRectangle.y < lineHeight;
 
                 if (isFirstLine && root.blockIndex > 0) {
@@ -502,7 +481,7 @@ Item {
 
             Keys.onDownPressed: event => {
                 // Check if cursor is at the last line
-                var lineHeight = font.pixelSize * 1.2;
+                var lineHeight = font.pixelSize * 1.5;
                 var textHeight = contentHeight > 0 ? contentHeight : lineHeight;
                 var isLastLine = cursorRectangle.y >= (textHeight - lineHeight);
 

@@ -28,36 +28,37 @@ Item {
     property int level: 0
 
     function getThemeColor() {
+        var isDark = FluTheme.dark;
         switch (calloutType.toLowerCase()) {
         case "info":
         case "note":
         case "todo":
-            return "#0078d4"; // Blue
+            return isDark ? "#60ccff" : "#0078d4"; // Cyan/Blue
         case "tip":
         case "success":
         case "check":
         case "done":
-            return "#107C10"; // Green
+            return isDark ? "#1cc24d" : "#107C10"; // Light Green / Green
         case "question":
         case "help":
         case "warning":
         case "caution":
         case "attention":
-            return "#d83b01"; // Orange
+            return isDark ? "#ffaa44" : "#d83b01"; // Orange/Gold
         case "failure":
         case "fail":
         case "missing":
         case "danger":
         case "error":
         case "bug":
-            return "#c50f1f"; // Red
+            return isDark ? "#ff4d4f" : "#c50f1f"; // Red/Salmon
         case "example":
-            return "#624a73"; // Purple
+            return isDark ? "#d2a8ff" : "#624a73"; // Light Purple / Purple
         case "quote":
         case "cite":
-            return "#888888"; // Gray
+            return isDark ? "#a1a1a1" : "#505050"; // Gray
         default:
-            return "#0078d4"; // Default Blue
+            return isDark ? "#60ccff" : "#0078d4";
         }
     }
 
@@ -210,7 +211,7 @@ Item {
 
     Component {
         id: editorComp
-        FluMultilineTextBox {
+        FluentEditorArea {
             width: parent.width
             text: {
                 // Reconstruct Callout Markup
@@ -219,8 +220,12 @@ Item {
                 return header + (body.length > 0 ? "\n" + body : "");
             }
 
+            customTextColor: FluTheme.dark ? "#FFFFFF" : "#000000"
+            customSelectionColor: FluTheme.primaryColor
+            customBackgroundColor: FluTheme.dark ? Qt.rgba(0, 0, 0, 0.2) : Qt.rgba(0, 0, 0, 0.05)
+
+            // Allow newlines in callout
             Keys.onReturnPressed: event => {
-                // Allow newlines in callout
                 event.accepted = false;
             }
 
@@ -232,7 +237,6 @@ Item {
 
             function finishEdit() {
                 if (root.isEditing) {
-                    // We pass the raw text back. Metadata updates happen in C++ via replaceBlock parsing.
                     if (root.noteListView && root.noteListView.model) {
                         root.noteListView.model.replaceBlock(root.blockIndex, text);
                     }
