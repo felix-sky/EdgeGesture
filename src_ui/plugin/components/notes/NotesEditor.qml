@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Controls 2.15
 import Qt.labs.platform 1.1
+import Qt.labs.qmlmodels 1.0
 import FluentUI 1.0
 import EdgeGesture.Notes 1.0
 import "./blocks"
@@ -256,162 +257,50 @@ Item {
                 }
             }
 
-            // Delegate Chooser Logic
-            delegate: Loader {
-                id: delegateLoader
-
-                // Set the width for the delegate to fill the view
+            // DelegateChooser-based block rendering
+            delegate: BlockDelegate {
+                id: blockDelegate
                 width: ListView.view.width
 
-                // Reset editing state when delegate is pooled for reuse
-                ListView.onPooled: {
-                    if (item)
-                        item.isEditing = false;
+                // Pass editor context
+                editor: editorPage
+                noteListView: listView
+                notesIndex: editorPage.notesIndex
+                notesFileHandler: editorPage.notesFileHandler
+                notePath: editorPage.notePath
+                vaultRootPath: editorPage.vaultRootPath
+
+                // Link callback
+                onLinkActivatedCallback: function (link) {
+                    var title = link.replace(/\\/g, "/");
+                    var lastSlash = title.lastIndexOf("/");
+                    if (lastSlash >= 0) {
+                        title = title.substring(lastSlash + 1);
+                    }
+                    if (title.endsWith(".md")) {
+                        title = title.substring(0, title.length - 3);
+                    }
+                    editorPage.linkOpened(link, title);
                 }
 
-                // Helper to get folder path from notePath, handling both slashes
-                property string folderPath: {
-                    var p = notePath.replace(/\\/g, "/");
-                    return p.substring(0, p.lastIndexOf("/"));
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "folderPath"
-                    value: delegateLoader.folderPath
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "blockIndex" // Pass index explicitly
-                    value: index
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "noteListView" // Pass ListView explicitly
-                    value: listView
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "notesIndex" // Pass NotesIndex for lookup
-                    value: notesIndex
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "notesFileHandler" // Pass NotesFileHandler for image search
-                    value: notesFileHandler
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "notePath" // Pass notePath for image search context
-                    value: notePath
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "vaultRootPath"
-                    value: vaultRootPath
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "editor" // Pass editor reference
-                    value: editorPage
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "type"
-                    value: model.type
-                    when: delegateLoader.status === Loader.Ready
-                }
-
-                Binding {
-                    target: delegateLoader.item
-                    property: "level"
-                    value: model.level
-                    when: delegateLoader.status === Loader.Ready
-                }
-
+                // Handle focus requests
                 Connections {
                     target: editorPage
                     function onRequestBlockEdit(idx) {
-                        if (idx === index) {
-                            // Ensure the ListView follows the focus
+                        if (idx === blockDelegate.index) {
                             listView.currentIndex = idx;
-
-                            if (delegateLoader.item) {
-                                delegateLoader.item.isEditing = true;
-                            } else {
-                                // Delegate not ready yet, store the intent
-                                editorPage.pendingFocusIndex = idx;
-                            }
+                            blockDelegate.isEditing = true;
                         }
                     }
                     ignoreUnknownSignals: true
                 }
 
-                onLoaded: {
-                    if (item) {
-                        // Check if we have a pending focus for this index
-                        if (index === editorPage.pendingFocusIndex) {
-                            listView.currentIndex = index;
-                            item.isEditing = true;
-                            editorPage.pendingFocusIndex = -1;
-                        }
-
-                        // Manually assign the callback function to avoid QML Binding type issues with functions
-                        item.onLinkActivatedCallback = function (link) {
-                            // Extract title from path (remove directory and .md extension)
-                            var title = link.replace(/\\/g, "/");
-                            var lastSlash = title.lastIndexOf("/");
-                            if (lastSlash >= 0) {
-                                title = title.substring(lastSlash + 1);
-                            }
-                            if (title.endsWith(".md")) {
-                                title = title.substring(0, title.length - 3);
-                            }
-                            editorPage.linkOpened(link, title);
-                        };
-                    }
-                }
-
-                source: {
-                    switch (model.type) {
-                    case "heading":
-                        return "blocks/ParagraphBlock.qml";
-                    case "code":
-                        return "blocks/CodeBlock.qml";
-                    case "quote":
-                        return "blocks/QuoteBlock.qml";
-                    case "callout":
-                        return "blocks/CalloutBlock.qml";
-                    case "tasklist":
-                        return "blocks/TaskListBlock.qml";
-                    case "embed":
-                        return "blocks/EmbedBlock.qml";
-                    case "image":
-                        return "blocks/ImageBlock.qml";
-                    case "list":
-                        return "blocks/ListBlock.qml";
-                    case "reference":
-                        return "blocks/ReferenceBlock.qml";
-                    case "divider":
-                        return "blocks/DividerBlock.qml";
-                    default:
-                        return "blocks/ParagraphBlock.qml";
+                // Handle pending focus on component ready
+                Component.onCompleted: {
+                    if (index === editorPage.pendingFocusIndex) {
+                        listView.currentIndex = index;
+                        isEditing = true;
+                        editorPage.pendingFocusIndex = -1;
                     }
                 }
             }

@@ -20,7 +20,8 @@ public:
     MetadataRole,
     LevelRole,
     LanguageRole,
-    HeightHintRole
+    HeightHintRole,
+    FormattedContentRole // Pre-rendered HTML for display
   };
 
   explicit NoteBlockModel(QObject *parent = nullptr);
@@ -39,6 +40,7 @@ public:
   Q_INVOKABLE void replaceBlock(int index, const QString &text);
   Q_INVOKABLE void removeBlock(int index);
   Q_INVOKABLE QString getMarkdown() const;
+  Q_INVOKABLE void setDarkMode(bool dark); // Theme-aware formatting
 
 signals:
   void loadingChanged();
@@ -49,6 +51,7 @@ private slots:
 private:
   QVector<NoteBlock> m_blocks;
   bool m_loading = false;
+  bool m_darkMode = true; // Theme for formatted content
   QFutureWatcher<QVector<NoteBlock>> *m_watcher;
 };
 

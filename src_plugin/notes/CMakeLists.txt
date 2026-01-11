@@ -130,6 +130,7 @@ qt_add_qml_module(notesplugin
 		${CMAKE_CURRENT_SOURCE_DIR}/MathRenderItem.h ${CMAKE_CURRENT_SOURCE_DIR}/MathRenderItem.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/MathHelper.h ${CMAKE_CURRENT_SOURCE_DIR}/MathHelper.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/CodeHighlighter.h ${CMAKE_CURRENT_SOURCE_DIR}/CodeHighlighter.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/MarkdownFormatter.h ${CMAKE_CURRENT_SOURCE_DIR}/MarkdownFormatter.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/md4c/src/md4c.c
 		${JKQTMATHTEXT_SOURCES}
 		${JKQTMATHTEXT_HEADERS}

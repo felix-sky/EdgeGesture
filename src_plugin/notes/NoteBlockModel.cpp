@@ -1,4 +1,5 @@
 #include "NoteBlockModel.h"
+#include "MarkdownFormatter.h"
 #include "MarkdownParser.h"
 #include <QtConcurrent>
 
@@ -59,6 +60,9 @@ QVariant NoteBlockModel::data(const QModelIndex &index, int role) const {
     return block.language;
   case HeightHintRole:
     return QVariant(block.heightHint);
+  case FormattedContentRole:
+    // Pre-render markdown to HTML for display (uses C++ regex for speed)
+    return MarkdownFormatter::format(block.content, m_darkMode);
   }
 
   return QVariant();
@@ -72,6 +76,7 @@ QHash<int, QByteArray> NoteBlockModel::roleNames() const {
   roles[LevelRole] = "level";
   roles[LanguageRole] = "language";
   roles[HeightHintRole] = "heightHint";
+  roles[FormattedContentRole] = "formattedContent";
   return roles;
 }
 
@@ -370,4 +375,15 @@ QString NoteBlockModel::getMarkdown() const {
     }
   }
   return result.trimmed();
+}
+
+void NoteBlockModel::setDarkMode(bool dark) {
+  if (m_darkMode != dark) {
+    m_darkMode = dark;
+    // Notify all rows that formatted content has changed
+    if (!m_blocks.isEmpty()) {
+      emit dataChanged(createIndex(0, 0), createIndex(m_blocks.size() - 1, 0),
+                       {FormattedContentRole});
+    }
+  }
 }

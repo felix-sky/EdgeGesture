@@ -9,6 +9,7 @@ Item {
     height: loader.item ? Math.max(loader.item.contentHeight, loader.item.implicitHeight) + 16 : 24
 
     property string content: model.content ? model.content : ""
+    property string formattedContent: ""  // Pre-rendered HTML from C++ (optional, falls back to JS processing)
     property bool isEditing: false
     property string folderPath: ""
     property var noteListView: null
