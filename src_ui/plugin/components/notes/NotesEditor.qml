@@ -238,6 +238,7 @@ Item {
             clip: true
             model: blockModel
             spacing: 10
+            reuseItems: true  // Delegate recycling for better scroll performance
 
             // Optimization: Cache buffer for smooth scrolling
             cacheBuffer: 1000
@@ -261,6 +262,12 @@ Item {
 
                 // Set the width for the delegate to fill the view
                 width: ListView.view.width
+
+                // Reset editing state when delegate is pooled for reuse
+                ListView.onPooled: {
+                    if (item)
+                        item.isEditing = false;
+                }
 
                 // Helper to get folder path from notePath, handling both slashes
                 property string folderPath: {

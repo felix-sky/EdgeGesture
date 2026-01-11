@@ -22,6 +22,10 @@ Item {
     property string type: model.type ? model.type : "paragraph"
     property int level: model.level !== undefined ? model.level : 1
 
+    // Image cache for async resolution (performance optimization)
+    property var imageCache: ({})
+    property int imageCacheVersion: 0  // Increment to trigger re-render
+
     // Store next block index for timer (at root level so it survives component destruction)
     property int nextBlockIndex: -1
 
@@ -74,11 +78,47 @@ Item {
         sourceComponent: isEditing ? editorComp : viewerComp
     }
 
+    // Async image resolver - caches results and triggers re-render when ready
+    function resolveImageAsync(imageName) {
+        // Return cached result if available
+        if (root.imageCache.hasOwnProperty(imageName)) {
+            return root.imageCache[imageName];
+        }
+        // Mark as pending (empty string) to avoid duplicate lookups
+        root.imageCache[imageName] = "";
+        // Resolve asynchronously
+        Qt.callLater(function () {
+            var found = "";
+            if (root.notesFileHandler && root.notePath && root.vaultRootPath) {
+                found = root.notesFileHandler.findImage(imageName, root.notePath, root.vaultRootPath);
+                if (found && found.length > 0) {
+                    found = "file:///" + found.replace(/\\/g, "/");
+                }
+            }
+            if (found === "" && root.notesFileHandler && root.folderPath) {
+                var rel = root.folderPath + "/" + imageName;
+                if (root.notesFileHandler.exists(rel)) {
+                    found = "file:///" + rel.replace(/\\/g, "/");
+                }
+            }
+            // Update cache and trigger re-render if we found something
+            if (found !== root.imageCache[imageName]) {
+                root.imageCache[imageName] = found;
+                root.imageCacheVersion++;
+            }
+        });
+        return "";
+    }
+
     Component {
         id: viewerComp
         Text {
             id: textItem
             width: parent.width
+
+            // Cache font properties to avoid repeated function calls in bindings
+            readonly property int cachedFontSize: root.getFontSize()
+            readonly property int cachedFontWeight: root.getFontWeight()
             // Pre-process content to handle Obsidian-style images and links via Markdown
             text: {
                 var t = root.content;
@@ -89,8 +129,7 @@ Item {
                 // Math: $$...$$ (Display) and $...$ (Inline) -> PNG via JKQTMathText
                 // Process math early to avoid * or _ inside math being parsed as italic/bold
                 // Uses C++ regex processing for better performance
-                var currentFontSize = root.getFontSize();
-                var currentFontSize = root.getFontSize();
+                var currentFontSize = textItem.cachedFontSize;
                 var darkMode = root.editor ? root.editor.isDarkColor(root.editor.currentColor) : FluTheme.dark;
                 t = MathHelper.processMathToPlaceholders(t, currentFontSize, darkMode);
 
@@ -103,30 +142,21 @@ Item {
                 // e.g. "Check this: ![[img.png]]"
                 // But complex block returns (<div>...) are likely no longer needed or will only support inline images.
 
+                // Reference imageCacheVersion to trigger re-render when cache updates
+                var _cacheVer = root.imageCacheVersion;
+
                 t = t.replace(/!\[\[(.*?)\]\]/g, function (match, p1) {
                     var embedContent = p1;
                     var imageExtensions = /\.(png|jpg|jpeg|gif|bmp|svg|webp|ico|tiff?)$/i;
                     if (imageExtensions.test(embedContent)) {
-                        // Inline image
-                        var imageName = embedContent;
-                        var src = "";
-
-                        if (root.notesFileHandler && root.notePath && root.vaultRootPath) {
-                            var found = root.notesFileHandler.findImage(imageName, root.notePath, root.vaultRootPath);
-                            if (found && found.length > 0)
-                                src = "file:///" + found.replace(/\\/g, "/");
-                        }
-                        if (src === "" && root.folderPath) {
-                            var rel = root.folderPath + "/" + imageName;
-                            if (root.notesFileHandler.exists(rel))
-                                src = "file:///" + rel;
-                        }
+                        // Inline image - use async cache lookup
+                        var src = root.resolveImageAsync(embedContent);
 
                         if (src !== "") {
                             // Limit width for inline
                             return '<img src="' + src + '" width="200" style="vertical-align: middle;">';
                         }
-                        return '<span>[Image not found: ' + imageName + ']</span>';
+                        return '<span style="opacity:0.5">[Loading: ' + embedContent + ']</span>';
                     }
 
                     // For non-image embeds (sections) inside a paragraph, we render them as a link or text ref?
@@ -205,8 +235,8 @@ Item {
             }
             wrapMode: Text.Wrap
             color: root.editor ? root.editor.contrastColor : (FluTheme.dark ? "#cccccc" : "#222222")
-            font.pixelSize: getFontSize()
-            font.weight: getFontWeight()
+            font.pixelSize: cachedFontSize
+            font.weight: cachedFontWeight
             font.family: "Segoe UI"
             textFormat: Text.RichText  // Changed to RichText for HTML img width support
             linkColor: FluTheme.primaryColor

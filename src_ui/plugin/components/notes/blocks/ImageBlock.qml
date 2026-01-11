@@ -94,8 +94,10 @@ Item {
                     id: image
                     source: root.sourceUrl
                     width: parent.width
+                    sourceSize.width: parent.width  // Limit decode to display width (memory optimization)
+                    asynchronous: true  // Load in background thread to prevent UI blocking
                     fillMode: Image.PreserveAspectFit
-                    visible: root.imageLoaded
+                    visible: root.imageLoaded && status === Image.Ready
                     horizontalAlignment: Image.AlignLeft
 
                     onStatusChanged: {
@@ -104,6 +106,12 @@ Item {
                             root.errorMsg = "Failed to load image";
                         }
                     }
+                }
+
+                BusyIndicator {
+                    anchors.centerIn: parent
+                    running: image.status === Image.Loading
+                    visible: running
                 }
 
                 Text {
