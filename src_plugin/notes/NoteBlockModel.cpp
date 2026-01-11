@@ -36,6 +36,8 @@ QVariant NoteBlockModel::data(const QModelIndex &index, int role) const {
       return "tasklist";
     case BlockType::List:
       return "list";
+    case BlockType::Embed:
+      return "embed";
     case BlockType::Image:
       return "image";
     case BlockType::Paragraph:
@@ -128,6 +130,8 @@ void NoteBlockModel::insertBlock(int row, const QString &typeString,
     block.type = BlockType::TaskList;
   else if (typeString == "list")
     block.type = BlockType::List;
+  else if (typeString == "embed")
+    block.type = BlockType::Embed;
   else if (typeString == "image")
     block.type = BlockType::Image;
   else
@@ -179,6 +183,15 @@ void NoteBlockModel::replaceBlock(int row, const QString &text) {
   }
 }
 
+void NoteBlockModel::removeBlock(int row) {
+  if (row < 0 || row >= m_blocks.size())
+    return;
+
+  beginRemoveRows(QModelIndex(), row, row);
+  m_blocks.removeAt(row);
+  endRemoveRows();
+}
+
 QString NoteBlockModel::getMarkdown() const {
   QString result;
   for (const NoteBlock &block : m_blocks) {
@@ -217,6 +230,17 @@ QString NoteBlockModel::getMarkdown() const {
       }
       result.append(QString("- [%1] %2\n").arg(mark).arg(block.content));
     } break;
+    case BlockType::Embed:
+      // Reconstruct ![[Note#Section]]
+      result.append(QString("![[%1]]\n\n").arg(block.content));
+      break;
+    case BlockType::Image:
+      // Identify if it was likely an obsidian link (no path separation) or md
+      // link For simplicity, we default to obsidian style ![[image.png]] if it
+      // looks like a filename parser stripped syntax, content is just the
+      // path/name.
+      result.append(QString("![[%1]]\n\n").arg(block.content));
+      break;
     case BlockType::List:
       result.append("- " + block.content + "\n");
       break;

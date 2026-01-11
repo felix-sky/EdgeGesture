@@ -393,6 +393,10 @@ Item {
                         return "blocks/CalloutBlock.qml";
                     case "tasklist":
                         return "blocks/TaskListBlock.qml";
+                    case "embed":
+                        return "blocks/EmbedBlock.qml";
+                    case "image":
+                        return "blocks/ImageBlock.qml";
                     default:
                         return "blocks/ParagraphBlock.qml";
                     }

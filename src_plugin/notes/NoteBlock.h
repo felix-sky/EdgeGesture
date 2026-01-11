@@ -13,6 +13,7 @@ enum class BlockType {
   Callout, // New
   List,
   TaskList, // New
+  Embed,    // New: ![[Note#Section]] as block
   Image,
   ThematicBreak,
   Math,
@@ -30,6 +31,5 @@ struct NoteBlock {
   // UI Helpers
   int heightHint = 0;
 };
-
 
 #endif // NOTEBLOCK_H

@@ -194,6 +194,31 @@ Item {
             Keys.onReturnPressed: event => handleEnter(event)
             Keys.onEnterPressed: event => handleEnter(event)
 
+            Keys.onPressed: event => {
+                if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && text === "") {
+                    if (root.blockIndex >= 0 && root.noteListView && root.noteListView.model) {
+                        var idxToRemove = root.blockIndex;
+                        var count = root.noteListView.count;
+
+                        if (idxToRemove > 0) {
+                            if (root.editor) {
+                                root.editor.navigateToBlock(idxToRemove - 1, true);
+                            }
+                            if (typeof root.noteListView.model.removeBlock === "function")
+                                root.noteListView.model.removeBlock(idxToRemove);
+                            event.accepted = true;
+                        } else if (count > 1) {
+                            if (typeof root.noteListView.model.removeBlock === "function")
+                                root.noteListView.model.removeBlock(idxToRemove);
+                            if (root.editor) {
+                                root.editor.navigateToBlock(0, false);
+                            }
+                            event.accepted = true;
+                        }
+                    }
+                }
+            }
+
             function handleEnter(event) {
                 event.accepted = true;
                 var pos = cursorPosition;

@@ -161,7 +161,53 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
       }
     }
     break;
-  case MD_BLOCK_P:
+  case MD_BLOCK_P: {
+    // Check if it's a standalone Embed `![[...]]` or Image
+    // `![[...]]`/`![...](...)`
+    QString clean = ctx->currentTextBuffer.trimmed();
+    qDebug() << "MarkdownParser: P Block. Clean content:" << clean;
+
+    // 1. Check for `![[...]]`
+    QRegularExpression embedRegex(R"(^!\[\[(.*?)\]\]$)");
+    QRegularExpressionMatch embedMatch = embedRegex.match(clean);
+
+    // 2. Check for `![...](...)`
+    QRegularExpression mdImgRegex(R"(^!\[.*?\]\((.*?)\)$)");
+    QRegularExpressionMatch mdImgMatch = mdImgRegex.match(clean);
+
+    if (embedMatch.hasMatch()) {
+      QString inner = embedMatch.captured(1);
+      qDebug() << "MarkdownParser: Matched Embed Syntax. Inner content:"
+               << inner;
+
+      // Check extension to decide Embed vs Image
+      static const QRegularExpression imgExt(
+          R"(\.(png|jpg|jpeg|gif|bmp|svg|webp|ico|tiff?)$)",
+          QRegularExpression::CaseInsensitiveOption);
+      if (inner.contains(imgExt)) {
+        // It's an image block
+        ctx->currentBlock.type = BlockType::Image;
+        ctx->currentBlock.content = inner;
+        qDebug() << "MarkdownParser: Classified as Image";
+      } else {
+        // It's a note embed
+        ctx->currentBlock.type = BlockType::Embed;
+        ctx->currentBlock.content = inner;
+        qDebug() << "MarkdownParser: Classified as Embed";
+      }
+    } else if (mdImgMatch.hasMatch()) {
+      // Standard markdown image is always image
+      ctx->currentBlock.type = BlockType::Image;
+      ctx->currentBlock.content = mdImgMatch.captured(1); // The URL/Path
+      qDebug() << "MarkdownParser: Matched MD Image Syntax. Path:"
+               << ctx->currentBlock.content;
+    } else {
+      qDebug() << "MarkdownParser: No embed/image match. Standard Paragraph.";
+    }
+
+    shouldPush = true;
+    break;
+  }
   case MD_BLOCK_H:
   case MD_BLOCK_CODE:
     shouldPush = true;
@@ -171,7 +217,14 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
   }
 
   if (shouldPush && ctx->inBlock) {
-    ctx->currentBlock.content = ctx->currentTextBuffer;
+    // Only update content from buffer if it wasn't already set by a specific
+    // handler (like Embed/Image)
+    if (ctx->currentBlock.type != BlockType::Embed &&
+        ctx->currentBlock.type != BlockType::Image) {
+      ctx->currentBlock.content = ctx->currentTextBuffer;
+    }
+    // If it is Embed/Image, we already set the content to the inner text
+
     ctx->blocks.append(ctx->currentBlock);
 
     ctx->currentTextBuffer.clear();

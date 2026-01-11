@@ -419,20 +419,28 @@ QString NotesIndex::findPathByTitle(const QString &title) const {
   }
 
   qDebug() << "NotesIndex::findPathByTitle looking for:" << title;
-  qDebug() << "NotesIndex::findPathByTitle index size:" << m_titleToPath.size();
 
-  // Debug: print all titles in index
-  if (!m_titleToPath.contains(title)) {
-    qDebug() << "NotesIndex: Title not found. Available titles:";
-    for (auto it = m_titleToPath.constBegin(); it != m_titleToPath.constEnd();
-         ++it) {
-      qDebug() << "  -" << it.key() << "->" << it.value();
+  if (m_titleToPath.contains(title)) {
+    QString result = m_titleToPath.value(title);
+    qDebug() << "NotesIndex::findPathByTitle Found:" << result;
+    return result;
+  }
+
+  qDebug() << "NotesIndex::findPathByTitle - NOT FOUND in index of size:"
+           << m_titleToPath.size();
+  // Debug: print all titles in index if small enough or just summary?
+  // Let's print top 5 to see if index is populated at all
+  int count = 0;
+  for (auto it = m_titleToPath.constBegin(); it != m_titleToPath.constEnd();
+       ++it) {
+    if (count++ < 5) {
+      qDebug() << "   Index sample:" << it.key();
+    } else {
+      break;
     }
   }
 
-  QString result = m_titleToPath.value(title);
-  qDebug() << "NotesIndex::findPathByTitle result:" << result;
-  return result;
+  return QString();
 }
 
 // Static parsing methods

@@ -97,143 +97,41 @@ Item {
                 // Obsidian Embed syntax: ![[...]]
                 // - If ends with image extension (.png, .jpg, .jpeg, .gif, .bmp, .svg, .webp) -> Image embed
                 // - Otherwise -> Section/Chapter embed (transclude note content)
+                // Obsidian Embed syntax: ![[...]]
+                // Since standalone embeds are now handled by EmbedBlock/ImageBlock,
+                // we only handle INLINE images here if they appear in a text paragraph.
+                // e.g. "Check this: ![[img.png]]"
+                // But complex block returns (<div>...) are likely no longer needed or will only support inline images.
+
                 t = t.replace(/!\[\[(.*?)\]\]/g, function (match, p1) {
                     var embedContent = p1;
-
-                    // Check if it's an image file by extension
                     var imageExtensions = /\.(png|jpg|jpeg|gif|bmp|svg|webp|ico|tiff?)$/i;
-                    var isImage = imageExtensions.test(embedContent);
-
-                    if (isImage) {
-                        // Handle image embed
+                    if (imageExtensions.test(embedContent)) {
+                        // Inline image
                         var imageName = embedContent;
                         var src = "";
-                        var imageFound = false;
 
-                        // Use NotesFileHandler.findImage for vault-wide search (like Obsidian)
                         if (root.notesFileHandler && root.notePath && root.vaultRootPath) {
                             var found = root.notesFileHandler.findImage(imageName, root.notePath, root.vaultRootPath);
-                            if (found && found.length > 0) {
+                            if (found && found.length > 0)
                                 src = "file:///" + found.replace(/\\/g, "/");
-                                imageFound = true;
-                            }
+                        }
+                        if (src === "" && root.folderPath) {
+                            var rel = root.folderPath + "/" + imageName;
+                            if (root.notesFileHandler.exists(rel))
+                                src = "file:///" + rel;
                         }
 
-                        // Fallback: check if image exists at relative path
-                        if (!imageFound && root.folderPath && root.folderPath.length > 0) {
-                            var relativePath = root.folderPath.replace(/\\/g, "/") + "/" + imageName;
-                            if (root.notesFileHandler && root.notesFileHandler.exists(relativePath)) {
-                                src = "file:///" + relativePath;
-                                imageFound = true;
-                            }
+                        if (src !== "") {
+                            // Limit width for inline
+                            return '<img src="' + src + '" width="200" style="vertical-align: middle;">';
                         }
-
-                        // Image not found - show error message
-                        if (!imageFound) {
-                            var errorBg = darkMode ? "rgba(0,0,0,0.3)" : "rgba(255,0,0,0.05)";
-                            var errorText = darkMode ? "#ffa39e" : "#d9363e";
-                            return '<div style="margin: 10px 0; padding: 12px; text-align: center; background:' + errorBg + '; border-radius: 4px; color:' + errorText + '; font-size:14px; font-family: Segoe UI;">' + '找不到 “' + imageName + '”' + '</div>';
-                        }
-
-                        // Only encode spaces - Qt handles raw Unicode paths better
-                        // But we need to handle special chars if they break HTML
-                        var imgPath = "file:///" + fullPath;
-                        return '<img src="' + imgPath + '" width="' + displayWidth + '" style="vertical-align: middle;">';
-                    } else {
-                        // Handle section/chapter embed (transclude)
-                        // Format: ![[NoteName]] or ![[NoteName#Section]] or ![[NoteName#^block-id]]
-                        var pagePart = embedContent;
-                        var sectionPart = "";
-                        var hashIndex = embedContent.indexOf('#');
-                        if (hashIndex !== -1) {
-                            pagePart = embedContent.substring(0, hashIndex);
-                            sectionPart = embedContent.substring(hashIndex + 1);
-                        }
-
-                        // Style variables
-                        // Use hex with alpha for Qt table backgrounds if needed
-                        var embedBg = darkMode ? "#4d000000" : "#0d000000"; // ~30% alpha black (dark mode)
-                        var embedBorderColor = darkMode ? "#60ccff" : "#0099cc"; // Cyan/Teal accent
-                        var embedText = darkMode ? "#e2e8f0" : "#2d3748";
-                        var titleColor = darkMode ? "#60ccff" : "#0099cc"; // Match border/accent color for title (Callout style)
-                        var iconColor = darkMode ? "#a0a0a0" : "#808080";
-
-                        // Error styles
-                        var errorBg = darkMode ? "rgba(0,0,0,0.3)" : "rgba(255,0,0,0.05)";
-                        var errorText = darkMode ? "#ff7875" : "#d9363e";
-
-                        // Find the note path
-                        var targetNotePath = "";
-                        if (root.notesIndex && pagePart !== "") {
-                            targetNotePath = root.notesIndex.findPathByTitle(pagePart);
-                        }
-
-                        // Fallback: try local folder
-                        if (targetNotePath === "" && pagePart !== "" && root.folderPath) {
-                            var localPath = root.folderPath + "/" + pagePart + ".md";
-                            if (root.notesFileHandler && root.notesFileHandler.exists(localPath)) {
-                                targetNotePath = localPath;
-                            }
-                        }
-
-                        // Helper for error creation
-                        function createError(msg) {
-                            return '<div style="margin: 8px 0; padding: 12px; text-align: center; background:' + errorBg + '; border-radius: 4px; color:' + errorText + '; font-size:13px; font-family: Segoe UI;">' + msg + '</div>';
-                        }
-
-                        // Helper: Create Table-based Callout-like Block for robust background unity
-                        function createCalloutEmbed(title, content) {
-                            // Use safe dark tint for background to ensure visibility
-                            var bgCol = darkMode ? "#4d000000" : "#0d000000";
-                            // Using a 2-column table to simulate the Left Border + Content Box
-                            // Cell 1: 4px wide, colored background (The Border)
-                            // Cell 2: Content with background
-                            return '<table width="100%" cellspacing="0" cellpadding="0" style="margin: 12px 0;">' + '<tr>' + '<td width="4" bgcolor="' + embedBorderColor + '"></td>' + '<td bgcolor="' + bgCol + '" style="padding: 10px 10px 10px 15px;">' + '<div style="color: ' + titleColor + '; font-size: 16px; font-weight: 600; margin-bottom: 6px;">' + title + '</div>' + '<div style="color: ' + embedText + '; font-size: 14px; line-height: 1.6;">' + content + '</div>' + '</td>' + '</tr>' + '</table>';
-                        }
-
-                        if (sectionPart !== "" && targetNotePath !== "") {
-                            // Section or block reference embed
-                            var extractedContent = "";
-
-                            if (sectionPart.startsWith('^')) {
-                                // Block embed - extract block by ID
-                                var blockId = sectionPart.substring(1);
-                                if (root.notesFileHandler) {
-                                    extractedContent = root.notesFileHandler.extractBlock(targetNotePath, blockId);
-                                }
-
-                                if (extractedContent && extractedContent.length > 0) {
-                                    return createCalloutEmbed(pagePart + ' > ' + blockId, extractedContent);
-                                } else {
-                                    return createError('Block not found: <b>' + blockId + '</b>');
-                                }
-                            } else {
-                                // Section embed - extract section by heading
-                                if (root.notesFileHandler) {
-                                    extractedContent = root.notesFileHandler.extractSection(targetNotePath, sectionPart);
-                                }
-
-                                if (extractedContent && extractedContent.length > 0) {
-                                    return createCalloutEmbed(pagePart + ' > ' + sectionPart, extractedContent);
-                                } else {
-                                    return createError('Section not found: <b>' + sectionPart + '</b>');
-                                }
-                            }
-                        } else if (sectionPart !== "" && targetNotePath === "") {
-                            return createError('Note not found: <b>' + pagePart + '</b>');
-                        } else {
-                            // Full note embed
-                            if (targetNotePath !== "" && root.notesFileHandler) {
-                                var noteData = root.notesFileHandler.readNote(targetNotePath);
-                                var noteContent = noteData.content || "";
-                                if (noteContent.length > 0) {
-                                    var preview = noteContent.length > 500 ? noteContent.substring(0, 500) + "..." : noteContent;
-                                    return createCalloutEmbed(pagePart, preview);
-                                }
-                            }
-                            return createError('Embed not found: <b>' + pagePart + '</b>');
-                        }
+                        return '<span>[Image not found: ' + imageName + ']</span>';
                     }
+
+                    // For non-image embeds (sections) inside a paragraph, we render them as a link or text ref?
+                    // "See ![[Note]]" -> "See [[Note]]" (link-like)
+                    return '<a href="' + encodeURIComponent(p1) + '">Embed: ' + p1 + '</a>';
                 });
 
                 // Replace [[Link|Alias]] or [[Link#anchor]] or [[Link]] with proper links
@@ -514,6 +412,37 @@ Item {
                         var imagePath = handler.saveClipboardImage(root.folderPath);
                         if (imagePath !== "") {
                             insert(cursorPosition, "![[" + imagePath + "]]");
+                            event.accepted = true;
+                        }
+                    }
+                    return;
+                }
+
+                if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && text === "") {
+                    // Logic to delete block if empty
+                    if (root.blockIndex >= 0 && root.noteListView && root.noteListView.model) {
+                        var idxToRemove = root.blockIndex;
+                        var count = root.noteListView.count;
+
+                        if (idxToRemove > 0) {
+                            // Focus previous block first (cursor at end)
+                            if (root.editor) {
+                                root.editor.navigateToBlock(idxToRemove - 1, true);
+                            }
+                            // Then remove the current block
+                            if (typeof root.noteListView.model.removeBlock === "function") {
+                                root.noteListView.model.removeBlock(idxToRemove);
+                            }
+                            event.accepted = true;
+                        } else if (count > 1) {
+                            // Deleting the first block (when others exist)
+                            if (typeof root.noteListView.model.removeBlock === "function") {
+                                root.noteListView.model.removeBlock(idxToRemove);
+                            }
+                            // Focus the new first block
+                            if (root.editor) {
+                                root.editor.navigateToBlock(0, false);
+                            }
                             event.accepted = true;
                         }
                     }

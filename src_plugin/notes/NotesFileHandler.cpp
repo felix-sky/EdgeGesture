@@ -108,6 +108,7 @@ bool NotesFileHandler::saveNote(const QString &filePath, const QString &content,
 }
 
 QVariantMap NotesFileHandler::readNote(const QString &filePath) {
+  qDebug() << "NotesFileHandler::readNote called for:" << filePath;
   QVariantMap result;
   result[QStringLiteral("content")] = QString();
   result[QStringLiteral("color")] = QStringLiteral("#624a73");
@@ -152,6 +153,8 @@ QVariantMap NotesFileHandler::readNote(const QString &filePath) {
     result[QStringLiteral("content")] = content;
   }
 
+  qDebug() << "NotesFileHandler::readNote success. Content length:"
+           << result["content"].toString().length();
   return result;
 }
 
@@ -461,6 +464,8 @@ QString NotesFileHandler::findImage(const QString &imageName,
 
 QString NotesFileHandler::extractSection(const QString &notePath,
                                          const QString &sectionName) {
+  qDebug() << "NotesFileHandler::extractSection called for path:" << notePath
+           << "section:" << sectionName;
   QString normalizedPath = normalizePath(notePath);
 
   QFile file(normalizedPath);
@@ -493,6 +498,8 @@ QString NotesFileHandler::extractSection(const QString &notePath,
 
   // Normalize search term
   QString searchTerm = sectionName.trimmed();
+  qDebug() << "NotesFileHandler::extractSection - normalized search term:"
+           << searchTerm;
 
   for (int i = 0; i < lines.size(); ++i) {
     QString line = lines[i];
@@ -505,9 +512,15 @@ QString NotesFileHandler::extractSection(const QString &notePath,
       int level = match.captured(1).length();
       QString headingText = match.captured(2).trimmed();
 
+      // Debug log for headings found
+      // qDebug() << "NotesFileHandler::extractSection - Found heading:" <<
+      // headingText << "Level:" << level;
+
       if (startLine < 0) {
         // Looking for the target heading
         if (headingText.compare(searchTerm, Qt::CaseInsensitive) == 0) {
+          qDebug() << "NotesFileHandler::extractSection - Found Match!"
+                   << headingText;
           startLine = i + 1; // Start collecting from next line
           startLevel = level;
         }
@@ -515,6 +528,9 @@ QString NotesFileHandler::extractSection(const QString &notePath,
         // Already found target, check if this heading ends the section
         if (level <= startLevel) {
           // This heading is at same or higher level - stop here
+          qDebug()
+              << "NotesFileHandler::extractSection - Ending section at heading:"
+              << headingText;
           break;
         }
         // Otherwise include this heading in the section content
@@ -524,6 +540,18 @@ QString NotesFileHandler::extractSection(const QString &notePath,
       // We're collecting content after the target heading
       sectionContent += line + QLatin1Char('\n');
     }
+  }
+
+  if (sectionContent.isEmpty()) {
+    if (startLine >= 0) {
+      qDebug() << "NotesFileHandler::extractSection - Section found but empty "
+                  "content.";
+    } else {
+      qDebug() << "NotesFileHandler::extractSection - Section NOT found.";
+    }
+  } else {
+    qDebug() << "NotesFileHandler::extractSection - Content extracted, length:"
+             << sectionContent.length();
   }
 
   return sectionContent.trimmed();
