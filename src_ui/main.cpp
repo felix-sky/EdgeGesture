@@ -19,24 +19,6 @@
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "user32.lib")
 
-void applyMica(QWindow *window) {
-  if (!window)
-    return;
-  HWND hwnd = (HWND)window->winId();
-  if (!hwnd)
-    return;
-
-  // DWMWA_SYSTEMBACKDROP_TYPE = 38
-  // DWMSBT_MAINWINDOW = 2 (Mica)
-  int backdropValue = 2;
-  HRESULT result =
-      DwmSetWindowAttribute(hwnd, 38, &backdropValue, sizeof(backdropValue));
-
-  // Extend frame into client area to ensure transparency
-  MARGINS margins = {-1, -1, -1, -1};
-  DwmExtendFrameIntoClientArea(hwnd, &margins);
-}
-
 int main(int argc, char *argv[]) {
   // Singleton check
   HANDLE hMutex = CreateMutexW(NULL, TRUE, L"EdgeGesture_SettingsUI_Singleton");
@@ -77,12 +59,6 @@ int main(int argc, char *argv[]) {
       [url](QObject *obj, const QUrl &objUrl) {
         if (!obj && url == objUrl) {
           QCoreApplication::exit(-1);
-        } else if (obj) {
-          // Check if it's a window and apply Mica
-          QWindow *window = qobject_cast<QWindow *>(obj);
-          if (window) {
-            applyMica(window);
-          }
         }
       },
       Qt::QueuedConnection);

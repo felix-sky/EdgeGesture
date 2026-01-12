@@ -45,4 +45,18 @@ void killProcess(const QString &processName) {
                                               << "/IM" << processName);
 }
 
+void applyMica(HWND hwnd) {
+  if (!hwnd)
+    return;
+
+  // DWMWA_SYSTEMBACKDROP_TYPE = 38
+  // DWMSBT_MAINWINDOW = 2 (Mica)
+  int backdropValue = 2;
+  DwmSetWindowAttribute(hwnd, 38, &backdropValue, sizeof(backdropValue));
+
+  // Extend frame into client area to ensure transparency
+  MARGINS margins = {-1, -1, -1, -1};
+  DwmExtendFrameIntoClientArea(hwnd, &margins);
+}
+
 } // namespace WindowsUtils

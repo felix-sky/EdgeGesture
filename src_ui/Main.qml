@@ -25,6 +25,7 @@ FluWindow {
     Component.onCompleted: {
         FluTheme.darkMode = FluThemeType.System;
         ConfigBridge.setWindowDark(FluTheme.dark);
+        SystemBridge.applyWindowEffects(window);
     }
 
     Connections {

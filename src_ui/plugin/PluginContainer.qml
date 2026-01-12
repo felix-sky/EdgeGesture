@@ -26,6 +26,8 @@ Window {
     Component.onCompleted: {
         // x = 20;
         y = (Screen.height - height) / 2;
+        // not working since it's not active at all
+        // SystemBridge.applyWindowEffects(containerWin);
     }
 
     onVisibleChanged: {
@@ -86,7 +88,7 @@ Window {
         id: rootBackground
         anchors.fill: parent
         radius: 12
-        color: FluTheme.dark ? Qt.rgba(0.1, 0.1, 0.1, 1) : Qt.rgba(0.95, 0.95, 0.95, 1)
+        color: FluTheme.dark ? "#333333" : "#E5E5E5"
         border.color: FluTheme.dark ? "#333333" : "#E5E5E5"
         border.width: 1
 
@@ -165,11 +167,11 @@ Window {
                             if (item.appLaunched)
                                 item.appLaunched.connect(containerWin.close);
 
+                            // Switch between input and default flags
                             if (item.requestInputMode) {
                                 item.requestInputMode.connect(function (active) {
                                     var wasVisible = containerWin.visible;
 
-                                    // [修改] 标记正在切换 Flag，避免触发启动动画
                                     containerWin.isSwitchingFlags = true;
 
                                     if (active) {
@@ -184,8 +186,6 @@ Window {
 
                                     if (wasVisible)
                                         containerWin.show();
-
-                                    // [修改] 恢复标记
                                     containerWin.isSwitchingFlags = false;
                                 });
                             }

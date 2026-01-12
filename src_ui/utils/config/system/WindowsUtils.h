@@ -19,5 +19,6 @@ void postMessageToWindow(const std::wstring &className,
                          const std::wstring &windowName, UINT msg,
                          WPARAM wParam, LPARAM lParam);
 void killProcess(const QString &processName);
+void applyMica(HWND hwnd);
 
 } // namespace WindowsUtils

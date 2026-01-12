@@ -41,6 +41,8 @@ public:
   Q_INVOKABLE void toggleNightLight();
   Q_INVOKABLE void toggleFocusAssist();
 
+  Q_INVOKABLE void applyWindowEffects(QObject *window);
+
   Q_INVOKABLE void lockScreen();
   Q_INVOKABLE void launchTaskManager();
   Q_INVOKABLE void launchCalculator();

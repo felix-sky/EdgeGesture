@@ -1,4 +1,5 @@
 #include "SystemBridge.h"
+#include "../system/WindowsUtils.h"
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QDateTime>
@@ -10,6 +11,7 @@
 #include <QProcess>
 #include <QSettings>
 #include <QUrl>
+#include <QWindow>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -24,9 +26,13 @@
 #include <windows.h>
 #include <wlanapi.h>
 
+#include <dwmapi.h>
+
 #pragma comment(lib, "wlanapi.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "user32.lib")
+#pragma comment(lib, "dwmapi.lib")
+
 
 SystemBridge::SystemBridge(QObject *parent) : QObject(parent) {
   // Initialize COM for audio control - use COINIT_MULTITHREADED if possible, or
@@ -324,6 +330,45 @@ void SystemBridge::setVolumeLevel(int level) {
     emit volumeLevelChanged();
   }
 }
+
+
+// WIndows effect ------------
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
+#endif
+
+#ifndef DWMSBT_MAINWINDOW
+#define DWMSBT_MAINWINDOW 2      // Mica
+#endif
+
+#ifndef DWMSBT_TRANSIENTWINDOW
+#define DWMSBT_TRANSIENTWINDOW 3 // Acrylic
+#endif
+
+#ifndef DWMSBT_TABBEDWINDOW
+#define DWMSBT_TABBEDWINDOW 4    // Mica Alt
+#endif
+
+void SystemBridge::applyWindowEffects(QObject *window) {
+    QWindow *qWin = qobject_cast<QWindow *>(window);
+    if (!qWin) return;
+
+    HWND hwnd = (HWND)qWin->winId();
+    bool isConfigWindow = (qWin->title() == QStringLiteral("EdgeGesture Config"));
+
+    DWORD backdropType = isConfigWindow ?  DWMSBT_MAINWINDOW : DWMSBT_TRANSIENTWINDOW;
+    DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
+
+    DWORD preference = DWMWCP_ROUND;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference));
+
+    MARGINS margins = {-1};
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
+}
+// End of Windows effect ----------------
 
 void SystemBridge::toggleWifi() {
   // Open WiFi settings - actual toggle requires elevated permissions
