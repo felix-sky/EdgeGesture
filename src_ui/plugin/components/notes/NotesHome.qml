@@ -553,6 +553,8 @@ Item {
     // Tag filter menu
     Menu {
         id: tagFilterMenu
+        x: parent.width - this.width - 20
+        y: 130
 
         MenuItem {
             text: "All Tags"
@@ -562,7 +564,7 @@ Item {
         MenuSeparator {}
 
         Repeater {
-            model: notesModel ? notesModel.getAllTags() : []
+            model: notesModel ? notesModel.allTags : []
             MenuItem {
                 text: modelData
                 onTriggered: notesModel.filterTag = modelData

@@ -36,6 +36,7 @@ class NotesModel : public QAbstractListModel {
   Q_PROPERTY(QString filterTag READ filterTag WRITE setFilterTag NOTIFY
                  filterTagChanged)
   Q_PROPERTY(bool isSearchMode READ isSearchMode NOTIFY isSearchModeChanged)
+  Q_PROPERTY(QStringList allTags READ allTags NOTIFY allTagsChanged)
 
 public:
   enum NotesRoles {
@@ -86,6 +87,7 @@ public:
   Q_INVOKABLE QStringList getBacklinks(const QString &title);
   Q_INVOKABLE void searchContent(const QString &query);
   Q_INVOKABLE QStringList getAllTags();
+  QStringList allTags() const;
 
 signals:
   void currentPathChanged();
@@ -95,6 +97,7 @@ signals:
   void filterStringChanged();
   void filterTagChanged();
   void isSearchModeChanged();
+  void allTagsChanged();
   void errorOccurred(const QString &message);
 
 private slots:

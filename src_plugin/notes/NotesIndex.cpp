@@ -488,21 +488,73 @@ QString NotesIndex::parseColor(const QString &frontmatter) {
 QStringList NotesIndex::parseTags(const QString &frontmatter) {
   QStringList tags;
 
-  // Match tags: [tag1, tag2, tag3] or tags: ["tag1", "tag2"]
-  QRegularExpression tagsRegex(QStringLiteral("tags:\\s*\\[([^\\]]+)\\]"));
-  QRegularExpressionMatch match = tagsRegex.match(frontmatter);
+  // 1. Try JSON-style array: tags: [tag1, tag2]
+  QRegularExpression jsonTagsRegex(QStringLiteral("tags:\\s*\\[([^\\]]+)\\]"));
+  QRegularExpressionMatch jsonMatch = jsonTagsRegex.match(frontmatter);
 
-  if (match.hasMatch()) {
-    QString tagsStr = match.captured(1);
-    // Split by comma and clean up
+  if (jsonMatch.hasMatch()) {
+    QString tagsStr = jsonMatch.captured(1);
     const QStringList rawTags = tagsStr.split(QLatin1Char(','));
     for (const QString &tag : rawTags) {
       QString cleaned = tag.trimmed();
-      // Remove quotes if present
       cleaned.remove(QLatin1Char('"'));
       cleaned.remove(QLatin1Char('\''));
       if (!cleaned.isEmpty()) {
         tags.append(cleaned);
+      }
+    }
+    return tags;
+  }
+
+  // 2. Try YAML list style:
+  // tags:
+  //   - tag1
+  //   - tag2
+  // Or simple single line: tags: tag1
+
+  // Find "tags:" line
+  QRegularExpression tagsLineRegex(QStringLiteral("^tags:\\s*(.*)$"),
+                                   QRegularExpression::MultilineOption);
+  QRegularExpressionMatch lineMatch = tagsLineRegex.match(frontmatter);
+
+  if (lineMatch.hasMatch()) {
+    QString lineValue = lineMatch.captured(1).trimmed();
+
+    // If there is value on the same line and it's not a list start
+    if (!lineValue.isEmpty()) {
+      // Single tag: tags: mytag
+      // Or comma separated without brackets (less common but possible): tags:
+      // tag1, tag2 ? For now assume single value if not empty
+      tags.append(lineValue);
+    } else {
+      // Look for subsequent lines starting with "- "
+      // We need to find where "tags:" starts
+      int startOffset = lineMatch.capturedEnd();
+
+      // Split frontmatter into lines starting from tags:
+      QString remaining = frontmatter.mid(startOffset);
+      QTextStream stream(&remaining);
+      QString line;
+      while (stream.readLineInto(&line)) {
+        QString trimmed = line.trimmed();
+        if (trimmed.startsWith(QLatin1String("-"))) {
+          QString tag = trimmed.mid(1).trimmed();
+          tag.remove(QLatin1Char('"'));
+          tag.remove(QLatin1Char('\''));
+          if (!tag.isEmpty()) {
+            tags.append(tag);
+          }
+        } else if (trimmed.contains(QLatin1String(":"))) {
+          // Next key found, stop
+          break;
+        } else if (trimmed.isEmpty()) {
+          continue;
+        } else {
+          // Indentation or continuation? If not starting with -, maybe stop
+          // But YAML is indentation based. For simplicity, we stop if we hit
+          // something that looks like a key or doesn't start with -
+          break;
+        }
       }
     }
   }

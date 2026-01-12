@@ -25,6 +25,8 @@ NotesModel::NotesModel(QObject *parent)
           &NotesModel::onIndexReady);
   connect(NotesIndex::instance(), &NotesIndex::entryUpdated, this,
           &NotesModel::onEntryUpdated);
+  connect(NotesIndex::instance(), &NotesIndex::indexUpdated, this,
+          &NotesModel::allTagsChanged);
 }
 
 NotesModel::~NotesModel() {
@@ -360,7 +362,9 @@ void NotesModel::searchContent(const QString &query) {
   }));
 }
 
-QStringList NotesModel::getAllTags() {
+QStringList NotesModel::getAllTags() { return allTags(); }
+
+QStringList NotesModel::allTags() const {
   return NotesIndex::instance()->getAllTags();
 }
 
