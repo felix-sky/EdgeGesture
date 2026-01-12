@@ -7,6 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
+
+
 # Setup Extra CMake Modules (ECM)
 set(ECM_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extra-cmake-modules")
 list(APPEND CMAKE_MODULE_PATH "${ECM_SOURCE_DIR}/modules" "${ECM_SOURCE_DIR}/find-modules")
@@ -160,6 +162,12 @@ target_link_libraries(notesplugin PRIVATE
 set_target_properties(notesplugin PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY ${NOTES_PLUGIN_OUTPUT_DIR}
 	RUNTIME_OUTPUT_DIRECTORY ${NOTES_PLUGIN_OUTPUT_DIR}
+)
+
+# disable qdebug in Release and MinSizeRel
+target_compile_definitions(notesplugin PRIVATE
+    $<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT>
+    $<$<CONFIG:MinSizeRel>:QT_NO_DEBUG_OUTPUT>
 )
 
 add_custom_command(TARGET notesplugin POST_BUILD

@@ -68,10 +68,10 @@ Item {
                 return imageComp;
             case "list":
                 return listComp;
-            case "reference":
-                return referenceComp;
             case "divider":
                 return dividerComp;
+            case "table":
+                return tableComp;
             default:
                 return paragraphComp;
             }
@@ -221,10 +221,21 @@ Item {
     }
 
     Component {
-        id: referenceComp
-        ReferenceBlock {
+        id: dividerComp
+        DividerBlock {
+            width: blockDelegate.width
+            noteListView: blockDelegate.noteListView
+            editor: blockDelegate.editor
+            blockIndex: blockDelegate.index
+        }
+    }
+
+    Component {
+        id: tableComp
+        TableBlock {
             width: blockDelegate.width
             content: blockDelegate.content
+            metadata: blockDelegate.metadata
             folderPath: blockDelegate.folderPath
             noteListView: blockDelegate.noteListView
             editor: blockDelegate.editor
@@ -233,16 +244,6 @@ Item {
             notePath: blockDelegate.notePath
             vaultRootPath: blockDelegate.vaultRootPath
             onLinkActivatedCallback: blockDelegate.onLinkActivatedCallback
-            blockIndex: blockDelegate.index
-        }
-    }
-
-    Component {
-        id: dividerComp
-        DividerBlock {
-            width: blockDelegate.width
-            noteListView: blockDelegate.noteListView
-            editor: blockDelegate.editor
             blockIndex: blockDelegate.index
         }
     }

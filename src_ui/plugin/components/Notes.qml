@@ -61,8 +61,6 @@ Item {
 
     property var notesIndex: NotesIndex
 
-    Component.onCompleted: {}
-
     // Main Navigation view
     StackView {
         id: stackView

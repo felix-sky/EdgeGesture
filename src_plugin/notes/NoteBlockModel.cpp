@@ -43,8 +43,8 @@ QVariant NoteBlockModel::data(const QModelIndex &index, int role) const {
       return "image";
     case BlockType::ThematicBreak:
       return "divider";
-    case BlockType::Reference:
-      return "reference";
+    case BlockType::Table:
+      return "table";
     case BlockType::Paragraph:
     default:
       return "paragraph";
@@ -188,27 +188,6 @@ void NoteBlockModel::updateBlock(int row, const QString &text) {
     if (text.trimmed() != "---") {
       m_blocks[row].type = BlockType::Paragraph;
     }
-  } else if (m_blocks[row].type == BlockType::Reference) {
-    // If updating a reference block, ensure we don't duplicate the pipe prefix
-    // and always use trimmed content to prevent whitespace accumulation
-    QString trimmed = text.trimmed();
-    qDebug() << "ReferenceBlock: updateBlock called. Row:" << row;
-    qDebug() << "ReferenceBlock: Input text:" << text;
-    qDebug() << "ReferenceBlock: Trimmed text:" << trimmed;
-    if (trimmed.startsWith("| ")) {
-      finalContent = trimmed.mid(2).trimmed();
-      qDebug() << "ReferenceBlock: Stripped '| ' prefix. finalContent:"
-               << finalContent;
-    } else if (trimmed.startsWith("|")) {
-      finalContent = trimmed.mid(1).trimmed();
-      qDebug() << "ReferenceBlock: Stripped '|' prefix. finalContent:"
-               << finalContent;
-    } else {
-      // No pipe found, but still use trimmed content to avoid whitespace issues
-      finalContent = trimmed;
-      qDebug() << "ReferenceBlock: No pipe prefix, using trimmed. finalContent:"
-               << finalContent;
-    }
   }
 
   // Direct update for responsiveness
@@ -247,8 +226,8 @@ void NoteBlockModel::insertBlock(int row, const QString &typeString,
     block.type = BlockType::Image;
   else if (typeString == "divider")
     block.type = BlockType::ThematicBreak;
-  else if (typeString == "reference")
-    block.type = BlockType::Reference;
+  else if (typeString == "table")
+    block.type = BlockType::Table;
   else
     block.type = BlockType::Paragraph;
 
@@ -315,10 +294,18 @@ QString NoteBlockModel::getMarkdown() const {
     case BlockType::Heading:
       result.append(QString(block.level, '#') + " " + block.content + "\n\n");
       break;
-    case BlockType::Code:
-      result.append("```" + block.language + "\n" + block.content +
-                    "\n```\n\n");
-      break;
+    case BlockType::Code: {
+      // Trim content to prevent newline accumulation
+      QString codeContent = block.content;
+      // Remove leading/trailing newlines only (preserve internal whitespace)
+      while (codeContent.startsWith('\n') || codeContent.startsWith('\r')) {
+        codeContent = codeContent.mid(1);
+      }
+      while (codeContent.endsWith('\n') || codeContent.endsWith('\r')) {
+        codeContent.chop(1);
+      }
+      result.append("```" + block.language + "\n" + codeContent + "\n```\n\n");
+    } break;
     case BlockType::Quote: {
       QStringList lines = block.content.split('\n');
       for (const QString &line : lines) {
@@ -365,17 +352,30 @@ QString NoteBlockModel::getMarkdown() const {
         result.append("* " + block.content + "\n");
       }
     } break;
-    case BlockType::Reference: {
-        QString cleanContent = block.content;
-        while (cleanContent.startsWith("|")) {
-            cleanContent = cleanContent.mid(1).trimmed();
-        }
-        result.append("| " + cleanContent + "\n\n");
-        break;
-    }
     case BlockType::ThematicBreak:
       result.append("---\n\n");
       break;
+    case BlockType::Table: {
+      // Reconstruct markdown table from metadata rows
+      QVariantList rows = block.metadata["rows"].toList();
+      for (int i = 0; i < rows.size(); ++i) {
+        QVariantList cells = rows[i].toList();
+        result.append("|");
+        for (const QVariant &cell : cells) {
+          result.append(" " + cell.toString() + " |");
+        }
+        result.append("\n");
+        // Add separator row after header (first row)
+        if (i == 0 && !cells.isEmpty()) {
+          result.append("|");
+          for (int j = 0; j < cells.size(); ++j) {
+            result.append(" --- |");
+          }
+          result.append("\n");
+        }
+      }
+      result.append("\n");
+    } break;
     default:
       result.append(block.content + "\n\n");
       break;

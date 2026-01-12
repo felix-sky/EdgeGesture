@@ -12,6 +12,13 @@ struct ParseContext {
   int inQuoteLevel = 0;   // Track nesting for flattening Quotes/Callouts
   QStack<bool> listStack; // True = Ordered, False = Unordered
   QString currentTextBuffer;
+
+  // Table parsing state
+  bool inTable = false;
+  bool inTableHeader = false;
+  QVector<QVector<QString>> tableRows;
+  QVector<QString> currentTableRow;
+  QString currentCellBuffer;
 };
 
 // MD4C Callbacks
@@ -90,7 +97,36 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
   case MD_BLOCK_HR:
     newBlock.type = BlockType::ThematicBreak;
     break;
+  case MD_BLOCK_TABLE:
+    // Start of a table - initialize table state
+    qDebug() << "MarkdownParser: MD_BLOCK_TABLE enter - starting table parsing";
+    ctx->inTable = true;
+    ctx->tableRows.clear();
+    ctx->inBlock = false; // Don't create block yet, wait for all rows
+    break;
+  case MD_BLOCK_THEAD:
+    ctx->inTableHeader = true;
+    break;
+  case MD_BLOCK_TBODY:
+    ctx->inTableHeader = false;
+    break;
+  case MD_BLOCK_TR:
+    // Start a new row
+    ctx->currentTableRow.clear();
+    ctx->inBlock = false;
+    break;
+  case MD_BLOCK_TH:
+  case MD_BLOCK_TD:
+    // Start a cell - clear the cell buffer
+    ctx->currentCellBuffer.clear();
+    ctx->inBlock = false;
+    break;
   case MD_BLOCK_P:
+    // Skip paragraph blocks inside tables - cell content is handled separately
+    if (ctx->inTable) {
+      ctx->inBlock = false;
+      break;
+    }
     newBlock.type = BlockType::Paragraph;
     break;
   default:
@@ -114,6 +150,56 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
   if (type == MD_BLOCK_UL || type == MD_BLOCK_OL) {
     if (!ctx->listStack.isEmpty())
       ctx->listStack.pop();
+    return 0;
+  }
+
+  // Table cell/row/table ending handling
+  if (type == MD_BLOCK_TH || type == MD_BLOCK_TD) {
+    // End of a cell - add cell content to the current row
+    ctx->currentTableRow.append(ctx->currentCellBuffer.trimmed());
+    ctx->currentCellBuffer.clear();
+    return 0;
+  }
+
+  if (type == MD_BLOCK_TR) {
+    // End of a row - add the row to table rows
+    if (!ctx->currentTableRow.isEmpty()) {
+      ctx->tableRows.append(ctx->currentTableRow);
+      ctx->currentTableRow.clear();
+    }
+    return 0;
+  }
+
+  if (type == MD_BLOCK_THEAD || type == MD_BLOCK_TBODY) {
+    // Just state tracking, already handled in enter
+    return 0;
+  }
+
+  if (type == MD_BLOCK_TABLE) {
+    // End of table - create the Table block with all cells as metadata
+    qDebug()
+        << "MarkdownParser: MD_BLOCK_TABLE leave - creating table block with"
+        << ctx->tableRows.size() << "rows";
+    if (!ctx->tableRows.isEmpty()) {
+      NoteBlock tableBlock;
+      tableBlock.type = BlockType::Table;
+
+      // Convert QVector<QVector<QString>> to QVariantList for metadata
+      QVariantList rowsVariant;
+      for (const auto &row : ctx->tableRows) {
+        QVariantList cellsVariant;
+        for (const QString &cell : row) {
+          cellsVariant.append(cell);
+        }
+        rowsVariant.append(QVariant(cellsVariant));
+      }
+      tableBlock.metadata["rows"] = rowsVariant;
+
+      ctx->blocks.append(tableBlock);
+      qDebug() << "MarkdownParser: Table block appended with metadata";
+    }
+    ctx->inTable = false;
+    ctx->tableRows.clear();
     return 0;
   }
 
@@ -236,20 +322,6 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
                << ctx->currentBlock.content;
     } else {
       qDebug() << "MarkdownParser: No embed/image match. Standard Paragraph.";
-
-        if (clean.startsWith("|")) {
-            ctx->currentBlock.type = BlockType::Reference;
-            QString content = clean;
-            while (content.startsWith("|")) {
-                if (content.startsWith("| ")) {
-                    content = content.mid(2);
-                } else {
-                    content = content.mid(1);
-                }
-            }
-            ctx->currentBlock.content = content.trimmed();
-            qDebug() << "MarkdownParser: Reference block detected. Clean content:" << ctx->currentBlock.content;
-        }
     }
 
     shouldPush = true;
@@ -287,26 +359,30 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
 static int enter_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
 
+  // Use the appropriate buffer based on table state
+  QString &buffer =
+      ctx->inTable ? ctx->currentCellBuffer : ctx->currentTextBuffer;
+
   if (type == MD_SPAN_STRONG)
-    ctx->currentTextBuffer.append("**");
+    buffer.append("**");
   if (type == MD_SPAN_EM)
-    ctx->currentTextBuffer.append("*");
+    buffer.append("*");
   if (type == MD_SPAN_CODE)
-    ctx->currentTextBuffer.append("`");
+    buffer.append("`");
 
   if (type == MD_SPAN_WIKILINK) {
-    ctx->currentTextBuffer.append("[[");
+    buffer.append("[[");
   }
 
   if (type == MD_SPAN_IMG) {
-    ctx->currentTextBuffer.append("![");
+    buffer.append("![");
   }
 
   if (type == MD_SPAN_LATEXMATH) {
-    ctx->currentTextBuffer.append("$");
+    buffer.append("$");
   }
   if (type == MD_SPAN_LATEXMATH_DISPLAY) {
-    ctx->currentTextBuffer.append("$$");
+    buffer.append("$$");
   }
 
   return 0;
@@ -314,28 +390,33 @@ static int enter_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
 
 static int leave_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
+
+  // Use the appropriate buffer based on table state
+  QString &buffer =
+      ctx->inTable ? ctx->currentCellBuffer : ctx->currentTextBuffer;
+
   if (type == MD_SPAN_STRONG)
-    ctx->currentTextBuffer.append("**");
+    buffer.append("**");
   if (type == MD_SPAN_EM)
-    ctx->currentTextBuffer.append("*");
+    buffer.append("*");
   if (type == MD_SPAN_CODE)
-    ctx->currentTextBuffer.append("`");
+    buffer.append("`");
 
   if (type == MD_SPAN_WIKILINK) {
-    ctx->currentTextBuffer.append("]]");
+    buffer.append("]]");
   }
 
   if (type == MD_SPAN_IMG) {
     MD_SPAN_IMG_DETAIL *img_detail = (MD_SPAN_IMG_DETAIL *)detail;
     QString src = QString::fromUtf8(img_detail->src.text, img_detail->src.size);
-    ctx->currentTextBuffer.append(QString("](%1)").arg(src));
+    buffer.append(QString("](%1)").arg(src));
   }
 
   if (type == MD_SPAN_LATEXMATH) {
-    ctx->currentTextBuffer.append("$");
+    buffer.append("$");
   }
   if (type == MD_SPAN_LATEXMATH_DISPLAY) {
-    ctx->currentTextBuffer.append("$$");
+    buffer.append("$$");
   }
 
   return 0;
@@ -344,8 +425,14 @@ static int leave_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
 static int text_callback(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size,
                          void *userdata) {
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
-  ctx->currentTextBuffer.append(
-      QString::fromUtf8(text, static_cast<int>(size)));
+  QString textStr = QString::fromUtf8(text, static_cast<int>(size));
+
+  // If we're in a table, append to the cell buffer instead
+  if (ctx->inTable) {
+    ctx->currentCellBuffer.append(textStr);
+  } else {
+    ctx->currentTextBuffer.append(textStr);
+  }
   return 0;
 }
 
@@ -355,7 +442,7 @@ QVector<NoteBlock> MarkdownParser::parse(const QString &markdown) {
   MD_PARSER parser = {
       0, // abi_version
       MD_DIALECT_GITHUB | MD_FLAG_WIKILINKS | MD_FLAG_TASKLISTS |
-          MD_FLAG_LATEXMATHSPANS, // flags
+          MD_FLAG_LATEXMATHSPANS | MD_FLAG_TABLES, // flags
       enter_block_callback,
       leave_block_callback,
       enter_span_callback,
