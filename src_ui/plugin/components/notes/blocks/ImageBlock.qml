@@ -24,6 +24,7 @@ Item {
     property string sourceUrl: ""
     property bool imageLoaded: false
     property string errorMsg: ""
+    property string pendingImageName: "" // Track which image we're waiting for
 
     onContentChanged: loadImage()
     onNotesFileHandlerChanged: loadImage()
@@ -31,40 +32,61 @@ Item {
     onVaultRootPathChanged: loadImage()
     onFolderPathChanged: loadImage()
 
-    function loadImage() {
-        // Content is filename "image.png"
-        var imageName = root.content;
+    // Listen for async image search results from C++
+    Connections {
+        target: notesFileHandler
+        function onImagePathFound(originalName, foundPath) {
+            if (originalName !== root.pendingImageName)
+                return;
 
-        // Handle markdown image syntax replacement if leaked: ![alt](src) -> src
-        // But the parser should handle that.
+            if (foundPath !== "") {
+                root.sourceUrl = "file:///" + foundPath.replace(/\\/g, "/");
+                root.imageLoaded = true;
+                root.errorMsg = "";
+            } else {
+                root.sourceUrl = "";
+                root.imageLoaded = false;
+                root.errorMsg = "Image not found: " + originalName;
+            }
+            root.pendingImageName = ""; // Clear pending state
+        }
+    }
+
+    function loadImage() {
+        var imageName = root.content;
+        if (!imageName || imageName === "")
+            return;
 
         if (!notesFileHandler)
             return;
 
-        var foundPath = "";
+        // Reset state for new load
+        imageLoaded = false;
+        pendingImageName = imageName;
 
-        // 1. Try vault search
+        // 1. Try async vault search (runs in background thread)
         if (notePath && vaultRootPath) {
-            foundPath = notesFileHandler.findImage(imageName, notePath, vaultRootPath);
+            notesFileHandler.findImageAsync(imageName, notePath, vaultRootPath);
+            return; // Wait for signal callback
         }
 
-        // 2. Try relative
-        if (foundPath === "" && folderPath) {
+        // 2. Fallback: Try relative path (fast, synchronous is OK here)
+        if (folderPath) {
             var rel = folderPath + "/" + imageName;
             if (notesFileHandler.exists(rel)) {
-                foundPath = rel;
+                sourceUrl = "file:///" + rel.replace(/\\/g, "/");
+                imageLoaded = true;
+                errorMsg = "";
+                pendingImageName = "";
+                return;
             }
         }
 
-        if (foundPath !== "") {
-            sourceUrl = "file:///" + foundPath.replace(/\\/g, "/");
-            imageLoaded = true;
-            errorMsg = "";
-        } else {
-            sourceUrl = "";
-            imageLoaded = false;
-            errorMsg = "Image not found: " + imageName;
-        }
+        // If we get here without vault paths, show error
+        sourceUrl = "";
+        imageLoaded = false;
+        errorMsg = "Image not found: " + imageName;
+        pendingImageName = "";
     }
 
     Component.onCompleted: loadImage()

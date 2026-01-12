@@ -7,11 +7,11 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
-
 #include <QMimeData>
 #include <QRegularExpression>
 #include <QTextStream>
 #include <QUrl>
+#include <QtConcurrent>
 
 NotesFileHandler::NotesFileHandler(QObject *parent) : QObject(parent) {
   // Constructor
@@ -398,6 +398,17 @@ QString NotesFileHandler::saveClipboardImage(const QString &folderPath) {
 QString NotesFileHandler::findImage(const QString &imageName,
                                     const QString &notePath,
                                     const QString &rootPath) {
+  // 1. Check cache first (fast path)
+  if (m_imageCache.contains(imageName)) {
+    QString cachedPath = m_imageCache[imageName];
+    if (QFile::exists(cachedPath)) {
+      return cachedPath;
+    } else {
+      // File was deleted, remove from cache
+      m_imageCache.remove(imageName);
+    }
+  }
+
   QString normalizedRoot = normalizePath(rootPath);
   QString normalizedNotePath = normalizePath(notePath);
 
@@ -426,10 +437,12 @@ QString NotesFileHandler::findImage(const QString &imageName,
   // 5. Root folder
   searchPaths << normalizedRoot + QStringLiteral("/") + imageName;
 
-  // Check each path
+  // Check each path (fast, common locations)
   for (const QString &path : std::as_const(searchPaths)) {
     if (QFile::exists(path)) {
-      return QDir::cleanPath(path);
+      QString foundPath = QDir::cleanPath(path);
+      m_imageCache.insert(imageName, foundPath); // Cache for future lookups
+      return foundPath;
     }
   }
 
@@ -438,7 +451,9 @@ QString NotesFileHandler::findImage(const QString &imageName,
   QDirIterator it(normalizedRoot, QStringList() << imageName, QDir::Files,
                   QDirIterator::Subdirectories);
   if (it.hasNext()) {
-    return QDir::cleanPath(it.next());
+    QString foundPath = QDir::cleanPath(it.next());
+    m_imageCache.insert(imageName, foundPath); // Cache for future lookups
+    return foundPath;
   }
 
   // FALLBACK: Try without "Pasted image " prefix (common Obsidian naming issue)
@@ -448,19 +463,40 @@ QString NotesFileHandler::findImage(const QString &imageName,
     // Try direct path first
     QString altPath = noteFolder + QStringLiteral("/") + altName;
     if (QFile::exists(altPath)) {
-      return QDir::cleanPath(altPath);
+      QString foundPath = QDir::cleanPath(altPath);
+      m_imageCache.insert(imageName, foundPath);
+      return foundPath;
     }
 
     // Recursive search with alternate name
     QDirIterator altIt(normalizedRoot, QStringList() << altName, QDir::Files,
                        QDirIterator::Subdirectories);
     if (altIt.hasNext()) {
-      return QDir::cleanPath(altIt.next());
+      QString foundPath = QDir::cleanPath(altIt.next());
+      m_imageCache.insert(imageName, foundPath);
+      return foundPath;
     }
   }
 
   // Not found
   return QString();
+}
+
+void NotesFileHandler::findImageAsync(const QString &imageName,
+                                      const QString &notePath,
+                                      const QString &rootPath) {
+  // Capture copies for thread safety
+  QString imgName = imageName;
+  QString noteP = notePath;
+  QString rootP = rootPath;
+
+  QtConcurrent::run([this, imgName, noteP, rootP]() {
+    // Run the potentially expensive findImage in a background thread
+    QString resultPath = this->findImage(imgName, noteP, rootP);
+
+    // Emit signal to notify QML (signal-slot handles cross-thread delivery)
+    emit this->imagePathFound(imgName, resultPath);
+  });
 }
 
 QString NotesFileHandler::extractSection(const QString &notePath,

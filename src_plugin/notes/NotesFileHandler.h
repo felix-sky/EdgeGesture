@@ -1,10 +1,12 @@
 #pragma once
 
 #include <QDateTime>
+#include <QHash>
 #include <QImage>
 #include <QObject>
 #include <QString>
 #include <QVariantMap>
+#include <QtConcurrent>
 #include <QtQml>
 
 class NotesFileHandler : public QObject {
@@ -136,6 +138,27 @@ public:
                                 const QString &rootPath);
 
   /**
+   * @brief Asynchronously finds an image file within the notes vault.
+   * Uses QtConcurrent to run in background thread, emits imagePathFound when
+   * done.
+   * @param imageName The image filename.
+   * @param notePath The path to the note containing the image reference.
+   * @param rootPath The root path of the notes vault.
+   */
+  Q_INVOKABLE void findImageAsync(const QString &imageName,
+                                  const QString &notePath,
+                                  const QString &rootPath);
+
+signals:
+  /**
+   * @brief Emitted when async image search completes.
+   * @param originalName The original image name that was searched.
+   * @param foundPath The full path if found, empty string if not.
+   */
+  void imagePathFound(const QString &originalName, const QString &foundPath);
+
+public:
+  /**
    * @brief Extracts a section from a markdown file by heading name.
    * Finds the heading matching sectionName and returns all content
    * until the next heading of same or higher level.
@@ -159,4 +182,7 @@ public:
 private:
   QString sanitizeFileName(const QString &name);
   QString normalizePath(const QString &path);
+
+  // Cache for image paths to avoid repeated disk scans
+  QHash<QString, QString> m_imageCache;
 };

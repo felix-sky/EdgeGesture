@@ -175,7 +175,10 @@ add_custom_command(TARGET notesplugin POST_BUILD
 	"${NOTES_PLUGIN_OUTPUT_DIR}"
 	"${CMAKE_BINARY_DIR}/$<CONFIG>/plugin/additional/EdgeGesture/Notes/"
 	# Copy KF6SyntaxHighlighting.dll to the notes plugin directory
+	# COMMAND ${CMAKE_COMMAND} -E copy_if_different
+	# "$<TARGET_FILE:KF6SyntaxHighlighting>"
+	# "${CMAKE_BINARY_DIR}/$<CONFIG>/plugin/additional/EdgeGesture/Notes/"
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different
 	"$<TARGET_FILE:KF6SyntaxHighlighting>"
-	"${CMAKE_BINARY_DIR}/$<CONFIG>/plugin/additional/EdgeGesture/Notes/"
+	"${CMAKE_BINARY_DIR}/$<CONFIG>/"
 )
