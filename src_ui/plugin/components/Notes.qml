@@ -13,12 +13,36 @@ Item {
     anchors.bottom: parent.bottom
 
     // Base notes folder - convert URL to local path if needed
+    property string configPath: StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0] + "/EdgeGesture/notes.json"
     property string notesRootPath: {
         var docPath = StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0];
         if (docPath.toString().startsWith("file:///")) {
             docPath = docPath.toString().substring(8);
         }
         return docPath + "/EdgeGesture/Notes";
+    }
+
+    Component.onCompleted: {
+        var dir = StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0] + "/EdgeGesture";
+        if (!FileBridge.exists(dir)) {
+            FileBridge.createDirectory(dir);
+        }
+
+        if (FileBridge.exists(configPath)) {
+            var content = FileBridge.readFile(configPath);
+            if (content) {
+                try {
+                    var config = JSON.parse(content);
+                    if (config.lastRootPath) {
+                        notesRootPath = config.lastRootPath;
+                        notesModel.rootPath = notesRootPath;
+                        NotesIndex.setRootPath(notesRootPath);
+                    }
+                } catch (e) {
+                    console.log("Error loading notes config:", e);
+                }
+            }
+        }
     }
 
     signal closeRequested
@@ -37,9 +61,7 @@ Item {
 
     property var notesIndex: NotesIndex
 
-    Component.onCompleted: {
-
-    }
+    Component.onCompleted: {}
 
     // Main Navigation view
     StackView {
@@ -140,6 +162,13 @@ Item {
             var newPath = notesFileHandler.urlToPath(folderDialog.folder.toString());
             // Update the root path for model, index, AND notes editor
             notesRootPath = newPath;
+
+            // Save config
+            var data = {
+                "lastRootPath": newPath
+            };
+            FileBridge.writeFile(configPath, JSON.stringify(data, null, 4));
+
             notesModel.rootPath = newPath;
             NotesIndex.setRootPath(newPath);
         }

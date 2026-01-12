@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
+
 #include <QMimeData>
 #include <QRegularExpression>
 #include <QTextStream>

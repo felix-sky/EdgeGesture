@@ -5,8 +5,7 @@ import FluentUI 1.0
 
 Item {
     id: root
-    width: ListView.view ? ListView.view.width - 20 : 300
-    // Height depends on image aspect ratio, but we limit max height
+    width: 300
     implicitHeight: editorLoader.item ? editorLoader.item.height : 0
 
     property string content: model.content ? model.content : "" // "image.png"
@@ -27,6 +26,10 @@ Item {
     property string errorMsg: ""
 
     onContentChanged: loadImage()
+    onNotesFileHandlerChanged: loadImage()
+    onNotePathChanged: loadImage()
+    onVaultRootPathChanged: loadImage()
+    onFolderPathChanged: loadImage()
 
     function loadImage() {
         // Content is filename "image.png"
@@ -81,7 +84,7 @@ Item {
             Rectangle {
                 id: imgContainer
                 width: parent.width
-                height: image.status === Image.Ready ? Math.min(image.sourceSize.height * (width / image.sourceSize.width), 500) : 50
+                height: image.status === Image.Ready ? Math.min(image.implicitHeight, 500) : 50
                 // logical height: maintain aspect ratio, max 500px height?
 
                 color: "transparent"
