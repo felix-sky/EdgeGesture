@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import QtQuick.Window 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Controls 2.15
 import Qt.labs.platform 1.1
@@ -89,7 +90,10 @@ Item {
         loadNote();
     }
 
-    Component.onDestruction: editorPage.inputModeRequested(false)
+    Component.onDestruction: {
+        editorPage.inputModeRequested(false);
+        resetContainerColor();
+    }
 
     function loadNote() {
         if (notePath !== "" && notesFileHandler && notesFileHandler.exists(notePath)) {
@@ -97,6 +101,7 @@ Item {
             // noteData.content is the raw markdown string
             blockModel.loadMarkdown(noteData.content);
             currentColor = noteData.color;
+            updateContainerColor();
 
             // Ensure we have at least one block for editing if empty
             if (noteData.content.trim() === "") {}
@@ -127,6 +132,12 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: currentColor
+        Behavior on color {
+            ColorAnimation {
+                duration: 333
+                easing.type: Easing.OutQuint
+            }
+        }
     }
 
     ColumnLayout {
@@ -223,6 +234,7 @@ Item {
                     iconColor: contrastColor
                     onClicked: {
                         saveNote(); // Auto-save on close
+                        resetContainerColor();
                         editorPage.closeRequested();
                     }
                 }
@@ -339,6 +351,19 @@ Item {
 
     function changeColor(c) {
         currentColor = c;
+        updateContainerColor();
         saveNote();
+    }
+
+    function updateContainerColor() {
+        if (Window.window && typeof Window.window.setBackgroundColor === "function") {
+            Window.window.setBackgroundColor(currentColor);
+        }
+    }
+
+    function resetContainerColor() {
+        if (Window.window && typeof Window.window.resetBackgroundColor === "function") {
+            Window.window.resetBackgroundColor();
+        }
     }
 }

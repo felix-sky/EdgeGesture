@@ -84,12 +84,28 @@ Window {
         }
     }
 
+    property var customBackgroundColor: null
+
+    function setBackgroundColor(c) {
+        customBackgroundColor = c;
+    }
+
+    function resetBackgroundColor() {
+        customBackgroundColor = null;
+    }
+
     Rectangle {
         id: rootBackground
         anchors.fill: parent
         radius: 12
-        color: FluTheme.dark ? "#333333" : "#E5E5E5"
-        border.color: FluTheme.dark ? "#333333" : "#E5E5E5"
+        color: customBackgroundColor ? customBackgroundColor : (FluTheme.dark ? "#1a1a1a" : '#f3f3f3')
+        Behavior on color {
+            ColorAnimation {
+                duration: 333
+                easing.type: Easing.OutQuint
+            }
+        }
+        border.color: FluTheme.dark ? "#1a1a1a" : '#f3f3f3'
         border.width: 1
 
         Item {
