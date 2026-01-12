@@ -5,9 +5,9 @@ import FluentUI 1.0
 Item {
     id: root
     width: ListView.view ? ListView.view.width - 20 : 300
-    height: loader.item ? loader.item.implicitHeight : 24
+    height: loader.item ? loader.item.height : 24
 
-    property string content: model.content ? model.content : ""
+    property string content: ""
     property bool isEditing: false
     property string folderPath: ""
     property var noteListView: null
@@ -21,6 +21,22 @@ Item {
     property var notesFileHandler: null // For image search
     property string notePath: "" // Current note path
     property string vaultRootPath: "" // Root of the vault for image search
+
+    // Store next block index for timer (at root level so it survives component destruction)
+    property int nextBlockIndex: -1
+
+    // Timer at root level - survives when editorComp is destroyed
+    Timer {
+        id: newBlockFocusTimer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            if (root.nextBlockIndex >= 0 && root.editor) {
+                root.editor.navigateToBlock(root.nextBlockIndex, false);
+                root.nextBlockIndex = -1;
+            }
+        }
+    }
 
     // Strings for debugging
     Component.onCompleted: {}
@@ -45,8 +61,13 @@ Item {
             height: textItem.contentHeight + 20
             color: FluTheme.dark ? "#333333" : "#f0f0f0"
             radius: 4
-            border.left: 4
-            border.color: FluTheme.primaryColor
+            // Left accent border
+            Rectangle {
+                width: 4
+                height: parent.height
+                color: FluTheme.primaryColor
+                anchors.left: parent.left
+            }
 
             Text {
                 id: textItem
@@ -89,13 +110,7 @@ Item {
                 linkColor: FluTheme.primaryColor
 
                 Component.onCompleted: {
-                    // Set CSS stylesheet to constrain image width
-                    if (textDocument && textDocument.textDocument) {
-                        textDocument.textDocument.defaultStyleSheet = "img { max-width: 320px; height: auto; }";
-                    }
                     console.log("QuoteBlock Ready.");
-                    console.log("  > QC Processed Text:", text);
-                    console.log("  > QC BaseUrl:", baseUrl);
                 }
 
                 onLinkActivated: link => {
@@ -150,94 +165,152 @@ Item {
 
     Component {
         id: editorComp
-        TextArea {
+        Rectangle {
+            id: editorContainer
             width: root.width
-            text: root.content
-            wrapMode: Text.Wrap
-            color: FluTheme.dark ? "#cccccc" : "#555555"
-            font.pixelSize: 16
-            font.italic: true
-            font.family: "Segoe UI"
+            height: editorArea.contentHeight + 20
+            color: FluTheme.dark ? "#333333" : "#f0f0f0"
+            radius: 4
 
-            // Darker background for edit mode
-            background: Rectangle {
-                color: FluTheme.dark ? "#33000000" : "#1A000000"
-                radius: 4
-                border.width: 1
-                border.color: FluTheme.primaryColor
+            // Left accent border
+            Rectangle {
+                width: 4
+                height: parent.height
+                color: FluTheme.primaryColor
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
             }
 
-            Keys.onPressed: event => {
-                if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && text === "") {
-                    if (root.blockIndex >= 0 && root.noteListView && root.noteListView.model) {
-                        var idxToRemove = root.blockIndex;
-                        var count = root.noteListView.count;
+            FluentEditorArea {
+                id: editorArea
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                anchors.topMargin: 10
 
-                        if (idxToRemove > 0) {
-                            if (root.editor) {
-                                root.editor.navigateToBlock(idxToRemove - 1, true);
-                            }
-                            if (typeof root.noteListView.model.removeBlock === "function")
-                                root.noteListView.model.removeBlock(idxToRemove);
+                text: root.content
+
+                customBackgroundColor: "transparent"
+                customTextColor: root.editor ? root.editor.contrastColor : (FluTheme.dark ? "#cccccc" : "#555555")
+                customSelectionColor: FluTheme.primaryColor
+
+                font.pixelSize: 16
+                font.italic: true
+                font.family: "Segoe UI"
+
+                // Override the default Enter behavior
+                Keys.onReturnPressed: event => handleEnter(event)
+                Keys.onEnterPressed: event => handleEnter(event)
+
+                // Arrow key navigation between blocks
+                Keys.onUpPressed: event => {
+                    var lineHeight = font.pixelSize * 1.5;
+                    var isFirstLine = cursorRectangle.y < lineHeight;
+                    if (isFirstLine && root.blockIndex > 0) {
+                        finishEdit();
+                        if (root.editor && typeof root.editor.goToPreviousBlock === "function") {
+                            root.editor.goToPreviousBlock(root.blockIndex);
                             event.accepted = true;
-                        } else if (count > 1) {
-                            if (typeof root.noteListView.model.removeBlock === "function")
-                                root.noteListView.model.removeBlock(idxToRemove);
-                            if (root.editor) {
-                                root.editor.navigateToBlock(0, false);
-                            }
+                            return;
+                        }
+                    }
+                    event.accepted = false;
+                }
+
+                Keys.onDownPressed: event => {
+                    var lineHeight = font.pixelSize * 1.5;
+                    var textHeight = contentHeight > 0 ? contentHeight : lineHeight;
+                    var isLastLine = cursorRectangle.y >= (textHeight - lineHeight);
+                    if (isLastLine && root.editor) {
+                        finishEdit();
+                        if (typeof root.editor.goToNextBlock === "function") {
+                            root.editor.goToNextBlock(root.blockIndex);
                             event.accepted = true;
+                            return;
+                        }
+                    }
+                    event.accepted = false;
+                }
+
+                Keys.onPressed: event => {
+                    if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && text === "") {
+                        if (root.blockIndex >= 0 && root.noteListView && root.noteListView.model) {
+                            var idxToRemove = root.blockIndex;
+                            var count = root.noteListView.count;
+                            if (idxToRemove > 0) {
+                                if (root.editor)
+                                    root.editor.navigateToBlock(idxToRemove - 1, true);
+                                if (typeof root.noteListView.model.removeBlock === "function")
+                                    root.noteListView.model.removeBlock(idxToRemove);
+                                event.accepted = true;
+                            } else if (count > 1) {
+                                if (typeof root.noteListView.model.removeBlock === "function")
+                                    root.noteListView.model.removeBlock(idxToRemove);
+                                if (root.editor)
+                                    root.editor.navigateToBlock(0, false);
+                                event.accepted = true;
+                            }
                         }
                     }
                 }
-            }
 
-            selectByMouse: true
+                function handleEnter(event) {
+                    event.accepted = true;
+                    var pos = cursorPosition;
+                    var fullText = text;
+                    var preText = fullText.substring(0, pos);
+                    var postText = fullText.substring(pos);
 
-            Keys.onPressed: event => {
-                if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && text === "") {
-                    if (root.blockIndex >= 0 && root.noteListView && root.noteListView.model) {
-                        var idxToRemove = root.blockIndex;
-                        var count = root.noteListView.count;
-
-                        if (idxToRemove > 0) {
-                            if (root.editor) {
-                                root.editor.navigateToBlock(idxToRemove - 1, true);
-                            }
-                            if (typeof root.noteListView.model.removeBlock === "function")
-                                root.noteListView.model.removeBlock(idxToRemove);
-                            event.accepted = true;
-                        } else if (count > 1) {
-                            if (typeof root.noteListView.model.removeBlock === "function")
-                                root.noteListView.model.removeBlock(idxToRemove);
-                            if (root.editor) {
-                                root.editor.navigateToBlock(0, false);
-                            }
-                            event.accepted = true;
-                        }
-                    }
-                }
-            }
-
-            Component.onCompleted: {
-                forceActiveFocus();
-            }
-
-            onEditingFinished: {
-                finishEdit();
-            }
-
-            onActiveFocusChanged: {
-                if (!activeFocus)
-                    finishEdit();
-            }
-
-            function finishEdit() {
-                if (root.isEditing) {
                     if (root.noteListView && root.noteListView.model) {
-                        root.noteListView.model.updateBlock(root.blockIndex, text);
+                        root.noteListView.model.updateBlock(root.blockIndex, preText);
+                        // Continue quote by default
+                        root.noteListView.model.insertBlock(root.blockIndex + 1, "quote", postText);
+
+                        root.nextBlockIndex = root.blockIndex + 1;
+                        newBlockFocusTimer.start();
                     }
                     root.isEditing = false;
+                }
+
+                Component.onCompleted: {
+                    focusTimer.start();
+                    if (root.editor && root.editor._cursorAtEnd !== undefined) {
+                        cursorPosition = root.editor._cursorAtEnd ? length : 0;
+                    } else {
+                        cursorPosition = length;
+                    }
+                }
+
+                Timer {
+                    id: focusTimer
+                    interval: 50
+                    repeat: false
+                    onTriggered: editorArea.forceActiveFocus()
+                }
+
+                onEditingFinished: {
+                    finishEdit();
+                }
+
+                onActiveFocusChanged: {
+                    if (!activeFocus)
+                        finishEdit();
+                }
+
+                function finishEdit() {
+                    if (root.isEditing) {
+                        if (root.noteListView && root.noteListView.model) {
+                            if (typeof root.noteListView.model.replaceBlock === "function") {
+                                root.noteListView.model.replaceBlock(root.blockIndex, text);
+                            } else {
+                                root.noteListView.model.updateBlock(root.blockIndex, text);
+                            }
+                        }
+                        root.isEditing = false;
+                    }
                 }
             }
         }

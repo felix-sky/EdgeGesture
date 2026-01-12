@@ -109,6 +109,8 @@ void NoteBlockModel::updateBlock(int row, const QString &text) {
   if (row < 0 || row >= m_blocks.size())
     return;
 
+  QString finalContent = text;
+
   // Check if this is a paragraph being converted to a code block
   // Pattern: ```language (e.g., ```python, ```cpp, ```js)
   if (m_blocks[row].type == BlockType::Paragraph) {
@@ -132,7 +134,7 @@ void NoteBlockModel::updateBlock(int row, const QString &text) {
     // Reference: | text
     if (trimmed.startsWith("| ")) {
       m_blocks[row].type = BlockType::Reference;
-      m_blocks[row].content = trimmed.mid(2);
+      m_blocks[row].content = trimmed.mid(2); // Strip "| "
       QVector<int> roles = {TypeRole, ContentRole};
       emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
       return;
@@ -184,33 +186,33 @@ void NoteBlockModel::updateBlock(int row, const QString &text) {
     }
   } else if (m_blocks[row].type == BlockType::ThematicBreak) {
     if (text.trimmed() != "---") {
-      // Converted back to paragraph (or potentially other types, but let's
-      // default to paragraph first)
       m_blocks[row].type = BlockType::Paragraph;
-      // Retain the text as content
-      // However, we should check if it became a heading or list?
-      // For simplicity, just Paragraph for now, next edit will trigger regular
-      // parsing
     }
   } else if (m_blocks[row].type == BlockType::Reference) {
-    // If we are editing the raw content of a reference block
-    // Wait, ReferenceBlock.qml shows "content" which is the text *without* `|
-    // `. So if I edit "text" to "new text", it remains a Reference. But if I
-    // want to "break" the reference, I can't do it comfortably if I don't see
-    // the pipe. The user sees the pipe in the styling, but not in the editor
-    // usually? Actually, ReferenceBlock.qml shows `content` in
-    // `FluentEditorArea`. The `| ` is implicit. So editing a Reference block
-    // just edits the content. But what if the user wants to remove the
-    // reference status? They probably have to delete the block or we add a
-    // toggle. Or, we render `| ` in the text editor? If we render `| ` in the
-    // editor, then `text` includes it. ParagraphBlock.qml renders everything.
-    // In ReferenceBlock.qml, we are just showing content.
-    // So we don't need logic here for Reference *unless* we want to support
-    // un-referencing. Let's stick to Divider for now.
+    // If updating a reference block, ensure we don't duplicate the pipe prefix
+    // and always use trimmed content to prevent whitespace accumulation
+    QString trimmed = text.trimmed();
+    qDebug() << "ReferenceBlock: updateBlock called. Row:" << row;
+    qDebug() << "ReferenceBlock: Input text:" << text;
+    qDebug() << "ReferenceBlock: Trimmed text:" << trimmed;
+    if (trimmed.startsWith("| ")) {
+      finalContent = trimmed.mid(2).trimmed();
+      qDebug() << "ReferenceBlock: Stripped '| ' prefix. finalContent:"
+               << finalContent;
+    } else if (trimmed.startsWith("|")) {
+      finalContent = trimmed.mid(1).trimmed();
+      qDebug() << "ReferenceBlock: Stripped '|' prefix. finalContent:"
+               << finalContent;
+    } else {
+      // No pipe found, but still use trimmed content to avoid whitespace issues
+      finalContent = trimmed;
+      qDebug() << "ReferenceBlock: No pipe prefix, using trimmed. finalContent:"
+               << finalContent;
+    }
   }
 
   // Direct update for responsiveness
-  m_blocks[row].content = text;
+  m_blocks[row].content = finalContent;
   QVector<int> roles = {ContentRole};
   emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
 }
@@ -363,9 +365,14 @@ QString NoteBlockModel::getMarkdown() const {
         result.append("* " + block.content + "\n");
       }
     } break;
-    case BlockType::Reference:
-      result.append("| " + block.content + "\n\n");
-      break;
+    case BlockType::Reference: {
+        QString cleanContent = block.content;
+        while (cleanContent.startsWith("|")) {
+            cleanContent = cleanContent.mid(1).trimmed();
+        }
+        result.append("| " + cleanContent + "\n\n");
+        break;
+    }
     case BlockType::ThematicBreak:
       result.append("---\n\n");
       break;

@@ -6,18 +6,14 @@ import EdgeGesture.Notes 1.0
 /**
  * BlockDelegate - Wrapper component that handles common properties
  * for all block types and uses Loader with sourceComponent for type selection.
- *
- * Benefits:
- * - Centralizes all property bindings in one place
- * - Cleaner code structure in NotesEditor.qml
- * - Better delegate recycling with pooled state handling
+
  */
 Item {
     id: blockDelegate
     width: ListView.view ? ListView.view.width : 300
     height: contentLoader.item ? contentLoader.item.height : 24
 
-    // Required properties from model (Qt 5.15+ required property syntax)
+    // Required properties from model
     required property int index
     required property string type
     required property string content
@@ -214,6 +210,11 @@ Item {
             folderPath: blockDelegate.folderPath
             noteListView: blockDelegate.noteListView
             editor: blockDelegate.editor
+            notesIndex: blockDelegate.notesIndex
+            notesFileHandler: blockDelegate.notesFileHandler
+            notePath: blockDelegate.notePath
+            vaultRootPath: blockDelegate.vaultRootPath
+            onLinkActivatedCallback: blockDelegate.onLinkActivatedCallback
             blockIndex: blockDelegate.index
             metadata: blockDelegate.metadata
         }
@@ -227,6 +228,10 @@ Item {
             folderPath: blockDelegate.folderPath
             noteListView: blockDelegate.noteListView
             editor: blockDelegate.editor
+            notesIndex: blockDelegate.notesIndex
+            notesFileHandler: blockDelegate.notesFileHandler
+            notePath: blockDelegate.notePath
+            vaultRootPath: blockDelegate.vaultRootPath
             onLinkActivatedCallback: blockDelegate.onLinkActivatedCallback
             blockIndex: blockDelegate.index
         }

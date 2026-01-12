@@ -8,8 +8,8 @@ Item {
     width: ListView.view ? ListView.view.width - 20 : 300
     implicitHeight: editorLoader.item ? editorLoader.item.height : 0
 
-    property string content: model.content ? model.content : ""
-    property var metadata: model.metadata ? model.metadata : ({})
+    property string content: ""
+    property var metadata: ({})
     property string calloutType: metadata["calloutType"] ? metadata["calloutType"] : "note"
     property string title: metadata["title"] ? metadata["title"] : "Note"
 
@@ -185,19 +185,6 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
-                // Pass through clicks to links if possible?
-                // Currently Text covers clicks. We need to handle this carefully.
-                // If we put MouseArea ON TOP, links won't work.
-                // If we put it BEHIND, Text consumes clicks.
-                // Solution: Put MouseArea behind Text, but Text should not consume clicks unless it's a link.
-                // However, Text doesn't have "pass through if not link".
-                // Simple approach: Double click to edit? Or click on Header to edit?
-                // Let's use click on background/header to edit, allowing links in body.
-
-                // For now, put MouseArea on top but ignore clicks over text? No.
-                // Let's rely on user clicking the header area (top part) or logic inside Text.
-                // The implicit MouseArea in ParagraphBlock works because it overlays everything.
-                // Here we have structure.
 
                 onClicked: {
                     // Edit mode

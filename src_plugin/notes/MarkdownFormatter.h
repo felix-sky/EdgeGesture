@@ -2,21 +2,7 @@
 
 #include <QString>
 
-/**
- * @brief High-performance Markdown to HTML formatter.
- *
- * Replaces QML JavaScript regex processing with C++ QRegularExpression
- * for 10-50x faster text formatting. Used by NoteBlockModel to pre-render
- * content for display.
- *
- * Supported syntax:
- * - **bold** or __bold__
- * - *italic* or _italic_
- * - ~~strikethrough~~
- * - `inline code`
- * - ==highlight==
- * - [[wiki links]] with optional |alias and #anchor
- */
+
 class MarkdownFormatter {
 public:
   /**

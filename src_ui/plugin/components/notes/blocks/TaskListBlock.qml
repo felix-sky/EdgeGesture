@@ -8,8 +8,8 @@ Item {
     width: ListView.view ? ListView.view.width - 20 : 300
     implicitHeight: Math.max(promptRect.height, textLoader.item ? textLoader.item.implicitHeight : 0)
 
-    property string content: model.content ? model.content : ""
-    property var metadata: model.metadata ? model.metadata : ({})
+    property string content: ""
+    property var metadata: ({})
     property bool isChecked: metadata["checked"] === true
     property bool isEditing: false
 
@@ -112,7 +112,6 @@ Item {
             text: {
                 var t = root.content;
                 // Basic Markdown Rendering (Simplified copy from ParagraphBlock)
-                // We should ideally centralize this logic.
 
                 // Math
                 var mathColor = FluTheme.dark ? "\\color{white} " : "\\color{black} ";

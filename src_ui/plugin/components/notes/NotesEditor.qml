@@ -44,7 +44,7 @@ Item {
     }
     property bool _cursorAtEnd: true // Internal: cursor position for next focus
 
-    // Add helper to check brightness of background color
+    // check brightness of background color
     function isDarkColor(c) {
         if (!c)
             return true; // Default to dark if undefined
@@ -218,7 +218,7 @@ Item {
                 }
 
                 FluIconButton {
-                    iconSource: FluentIcons.ChromeClose
+                    iconSource: FluentIcons.Back
                     iconSize: 16
                     iconColor: contrastColor
                     onClicked: {
@@ -239,9 +239,8 @@ Item {
             clip: true
             model: blockModel
             spacing: 10
-            reuseItems: true  // Delegate recycling for better scroll performance
+            reuseItems: true
 
-            // Optimization: Cache buffer for smooth scrolling
             cacheBuffer: 1000
 
             // Handle clicks on empty area (below all delegates)

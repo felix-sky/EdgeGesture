@@ -237,16 +237,19 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
     } else {
       qDebug() << "MarkdownParser: No embed/image match. Standard Paragraph.";
 
-      // Check for Reference Block: starts with `| `
-      // Note: Table rows also start with |, but md4c parses tables if enabled.
-      // If we are here in P block, it might be a standalone line.
-      // However, a single line `| text` is often treated as a paragraph if not
-      // a table.
-      if (clean.startsWith("| ")) {
-        ctx->currentBlock.type = BlockType::Reference;
-        // content is the rest
-        ctx->currentBlock.content = clean.mid(2).trimmed(); // Remove "| "
-      }
+        if (clean.startsWith("|")) {
+            ctx->currentBlock.type = BlockType::Reference;
+            QString content = clean;
+            while (content.startsWith("|")) {
+                if (content.startsWith("| ")) {
+                    content = content.mid(2);
+                } else {
+                    content = content.mid(1);
+                }
+            }
+            ctx->currentBlock.content = content.trimmed();
+            qDebug() << "MarkdownParser: Reference block detected. Clean content:" << ctx->currentBlock.content;
+        }
     }
 
     shouldPush = true;

@@ -4,24 +4,17 @@
 
 QString MarkdownFormatter::format(const QString &content, bool darkMode) {
   QString result = content;
-
-  // Order matters: process in specific order to avoid conflicts
-  // 1. Bold (before italic to handle **text** vs *text*)
+  
   result = formatBold(result);
 
-  // 2. Italic
   result = formatItalic(result);
 
-  // 3. Strikethrough
   result = formatStrikethrough(result);
 
-  // 4. Highlight
   result = formatHighlight(result, darkMode);
 
-  // 5. Inline code (after other formatting to preserve code content)
   result = formatInlineCode(result, darkMode);
 
-  // 6. Wiki links
   result = formatWikiLinksInternal(result);
 
   return result;

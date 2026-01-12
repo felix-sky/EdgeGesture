@@ -15,7 +15,6 @@ Item {
     // Base notes folder - convert URL to local path if needed
     property string notesRootPath: {
         var docPath = StandardPaths.standardLocations(StandardPaths.DocumentsLocation)[0];
-        // StandardPaths may return a file:// URL, convert to local path
         if (docPath.toString().startsWith("file:///")) {
             docPath = docPath.toString().substring(8);
         }
@@ -36,13 +35,10 @@ Item {
         id: notesFileHandler
     }
 
-    // NotesIndex singleton for index updates
-    // In Qt 6 with QML_SINGLETON, 'NotesIndex' refers to the singleton instance directly
     property var notesIndex: NotesIndex
 
     Component.onCompleted: {
-        // NotesIndex.setRootPath is called by NotesModel.setRootPath, no need to call it here
-        // This prevents a duplicate call that could cause blocking
+
     }
 
     // Main Navigation view
