@@ -4,3 +4,4 @@ project(EdgeGesturePlugins LANGUAGES CXX)
 
 # Add plugin subdirectories
 add_subdirectory(notes)
+add_subdirectory(StageManager)

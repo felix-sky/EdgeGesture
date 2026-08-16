@@ -7,3 +7,6 @@
 [submodule "src_plugin/notes/extra-cmake-modules"]
 	path = src_plugin/notes/extra-cmake-modules
 	url = https://invent.kde.org/frameworks/extra-cmake-modules.git
+[submodule "src_plugin/StageManager/external/PowerToys"]
+	path = src_plugin/StageManager/external/PowerToys
+	url = https://github.com/microsoft/PowerToys.git
