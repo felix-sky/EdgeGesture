@@ -26,28 +26,28 @@ QVariant NoteBlockModel::data(const QModelIndex &index, int role) const {
   case TypeRole: {
     switch (block.type) {
     case BlockType::Heading:
-      return "heading";
+      return QStringLiteral("heading");
     case BlockType::Code:
-      return "code";
+      return QStringLiteral("code");
     case BlockType::Quote:
-      return "quote";
+      return QStringLiteral("quote");
     case BlockType::Callout:
-      return "callout";
+      return QStringLiteral("callout");
     case BlockType::TaskList:
-      return "tasklist";
+      return QStringLiteral("tasklist");
     case BlockType::List:
-      return "list";
+      return QStringLiteral("list");
     case BlockType::Embed:
-      return "embed";
+      return QStringLiteral("embed");
     case BlockType::Image:
-      return "image";
+      return QStringLiteral("image");
     case BlockType::ThematicBreak:
-      return "divider";
+      return QStringLiteral("divider");
     case BlockType::Table:
-      return "table";
+      return QStringLiteral("table");
     case BlockType::Paragraph:
     default:
-      return "paragraph";
+      return QStringLiteral("paragraph");
     }
   }
   case ContentRole:
@@ -61,11 +61,30 @@ QVariant NoteBlockModel::data(const QModelIndex &index, int role) const {
   case HeightHintRole:
     return QVariant(block.heightHint);
   case FormattedContentRole:
-    // Pre-render markdown to HTML for display (uses C++ regex for speed)
     return MarkdownFormatter::format(block.content, m_darkMode);
+  case RawRole:
+    return block.raw;
+  case FoldStateRole:
+    return block.metadata.value(QStringLiteral("foldState"), QString());
+  case IsFoldableRole:
+    return block.metadata.value(QStringLiteral("isFoldable"), false);
+  case IsCollapsedRole:
+    return block.metadata.value(QStringLiteral("isCollapsed"), false);
   }
 
   return QVariant();
+}
+
+bool NoteBlockModel::setData(const QModelIndex &index, const QVariant &value, int role) {
+  if (!index.isValid() || index.row() >= m_blocks.size())
+    return false;
+
+  if (role == IsCollapsedRole) {
+    m_blocks[index.row()].metadata[QStringLiteral("isCollapsed")] = value.toBool();
+    emit dataChanged(index, index, {IsCollapsedRole});
+    return true;
+  }
+  return false;
 }
 
 QHash<int, QByteArray> NoteBlockModel::roleNames() const {
@@ -77,6 +96,10 @@ QHash<int, QByteArray> NoteBlockModel::roleNames() const {
   roles[LanguageRole] = "language";
   roles[HeightHintRole] = "heightHint";
   roles[FormattedContentRole] = "formattedContent";
+  roles[RawRole] = "raw";
+  roles[FoldStateRole] = "foldState";
+  roles[IsFoldableRole] = "isFoldable";
+  roles[IsCollapsedRole] = "isCollapsed";
   return roles;
 }
 
@@ -86,12 +109,13 @@ void NoteBlockModel::loadMarkdown(const QString &content) {
     m_watcher->waitForFinished();
   }
 
+  m_originalMarkdown = content;
+  m_isModified = false;
+  emit isModifiedChanged();
+
   m_loading = true;
   emit loadingChanged();
 
-  // Run parser in background thread
-  // Note: In strict QtConcurrent, we accept by value to avoid race conditions
-  // on 'content'
   m_watcher->setFuture(QtConcurrent::run(
       [content]() { return MarkdownParser::parse(content); }));
 }
@@ -109,90 +133,80 @@ void NoteBlockModel::updateBlock(int row, const QString &text) {
   if (row < 0 || row >= m_blocks.size())
     return;
 
+  m_isModified = true;
+  emit isModifiedChanged();
+
+  m_blocks[row].isModified = true;
   QString finalContent = text;
 
-  // Check if this is a paragraph being converted to a code block
-  // Pattern: ```language (e.g., ```python, ```cpp, ```js)
+  // Paragraph type conversions
   if (m_blocks[row].type == BlockType::Paragraph) {
-    static QRegularExpression codeBlockTrigger(R"(^```(\w*)$)");
+    static const QRegularExpression codeBlockTrigger(QStringLiteral("^```(\\w*)$"));
     QRegularExpressionMatch match = codeBlockTrigger.match(text.trimmed());
     if (match.hasMatch()) {
-      // Convert to code block
       m_blocks[row].type = BlockType::Code;
-      m_blocks[row].language = match.captured(1); // Language (may be empty)
-      m_blocks[row].content = ""; // Empty content, ready for code
-      QVector<int> roles = {TypeRole, ContentRole, LanguageRole};
+      m_blocks[row].language = match.captured(1);
+      m_blocks[row].content = QString();
+      m_blocks[row].raw = QStringLiteral("```") + m_blocks[row].language + QStringLiteral("\n\n```");
+      QVector<int> roles = {TypeRole, ContentRole, LanguageRole, RawRole};
       emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
       return;
     }
-  }
 
-  // Check for conversion from Paragraph to other types
-  if (m_blocks[row].type == BlockType::Paragraph) {
     QString trimmed = text.trimmed();
-
-    // Reference: | text
-    if (trimmed.startsWith("| ")) {
-      m_blocks[row].type = BlockType::Reference;
-      m_blocks[row].content = trimmed.mid(2); // Strip "| "
-      QVector<int> roles = {TypeRole, ContentRole};
-      emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
-      return;
-    }
-
-    // Divider: ---
-    if (trimmed == "---") {
+    if (trimmed == QStringLiteral("---")) {
       m_blocks[row].type = BlockType::ThematicBreak;
-      m_blocks[row].content = "";
-      QVector<int> roles = {TypeRole, ContentRole};
+      m_blocks[row].content = QString();
+      m_blocks[row].raw = QStringLiteral("---");
+      QVector<int> roles = {TypeRole, ContentRole, RawRole};
       emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
       return;
     }
 
-    // Unordered List: * text or - text
-    static QRegularExpression ulRegex(R"(^[\*\-]\s(.*)$)");
+    static const QRegularExpression ulRegex(QStringLiteral("^[\\*\\-]\\s(.*)$"));
     QRegularExpressionMatch ulMatch = ulRegex.match(trimmed);
     if (ulMatch.hasMatch()) {
       m_blocks[row].type = BlockType::List;
       m_blocks[row].content = ulMatch.captured(1);
-      m_blocks[row].metadata["listType"] = "bullet";
-      QVector<int> roles = {TypeRole, ContentRole, MetadataRole};
+      m_blocks[row].metadata[QStringLiteral("listType")] = QStringLiteral("bullet");
+      m_blocks[row].raw = trimmed;
+      QVector<int> roles = {TypeRole, ContentRole, MetadataRole, RawRole};
       emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
       return;
     }
 
-    // Ordered List: 1. text
-    static QRegularExpression olRegex(R"(^(\d+)\.\s(.*)$)");
+    static const QRegularExpression olRegex(QStringLiteral("^(\\d+)\\.\\s(.*)$"));
     QRegularExpressionMatch olMatch = olRegex.match(trimmed);
     if (olMatch.hasMatch()) {
       m_blocks[row].type = BlockType::List;
       m_blocks[row].content = olMatch.captured(2);
-      m_blocks[row].metadata["listType"] = "ordered";
-      QVector<int> roles = {TypeRole, ContentRole, MetadataRole};
+      m_blocks[row].metadata[QStringLiteral("listType")] = QStringLiteral("ordered");
+      m_blocks[row].raw = trimmed;
+      QVector<int> roles = {TypeRole, ContentRole, MetadataRole, RawRole};
       emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
       return;
     }
 
-    // Heading: # Text
-    static QRegularExpression hRegex(R"(^(#{1,6})\s(.*)$)");
+    static const QRegularExpression hRegex(QStringLiteral("^(#{1,6})\\s(.*)$"));
     QRegularExpressionMatch hMatch = hRegex.match(trimmed);
     if (hMatch.hasMatch()) {
       m_blocks[row].type = BlockType::Heading;
       m_blocks[row].level = hMatch.captured(1).length();
       m_blocks[row].content = hMatch.captured(2);
-      QVector<int> roles = {TypeRole, ContentRole, LevelRole};
+      m_blocks[row].raw = trimmed;
+      QVector<int> roles = {TypeRole, ContentRole, LevelRole, RawRole};
       emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
       return;
     }
   } else if (m_blocks[row].type == BlockType::ThematicBreak) {
-    if (text.trimmed() != "---") {
+    if (text.trimmed() != QStringLiteral("---")) {
       m_blocks[row].type = BlockType::Paragraph;
     }
   }
 
-  // Direct update for responsiveness
   m_blocks[row].content = finalContent;
-  QVector<int> roles = {ContentRole};
+  m_blocks[row].raw = finalContent;
+  QVector<int> roles = {ContentRole, RawRole, FormattedContentRole};
   emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
 }
 
@@ -201,35 +215,49 @@ void NoteBlockModel::insertBlock(int row, const QString &typeString,
   if (row < 0 || row > m_blocks.size())
     return;
 
+  m_isModified = true;
+  emit isModifiedChanged();
+
   beginInsertRows(QModelIndex(), row, row);
 
   NoteBlock block;
   block.content = content;
-  // block.metadata is already default constructed as empty QVariantMap
   block.level = 1;
+  block.isModified = true;
 
-  if (typeString == "heading")
+  if (typeString == QStringLiteral("heading")) {
     block.type = BlockType::Heading;
-  else if (typeString == "code")
+    block.raw = QStringLiteral("# ") + content;
+  } else if (typeString == QStringLiteral("code")) {
     block.type = BlockType::Code;
-  else if (typeString == "quote")
+    block.raw = QStringLiteral("```\n") + content + QStringLiteral("\n```");
+  } else if (typeString == QStringLiteral("quote")) {
     block.type = BlockType::Quote;
-  else if (typeString == "callout")
+    block.raw = QStringLiteral("> ") + content;
+  } else if (typeString == QStringLiteral("callout")) {
     block.type = BlockType::Callout;
-  else if (typeString == "tasklist")
+    block.metadata[QStringLiteral("calloutType")] = QStringLiteral("note");
+    block.metadata[QStringLiteral("title")] = QStringLiteral("Note");
+    block.raw = QStringLiteral("> [!NOTE]\n> ") + content;
+  } else if (typeString == QStringLiteral("tasklist")) {
     block.type = BlockType::TaskList;
-  else if (typeString == "list")
+    block.metadata[QStringLiteral("checked")] = false;
+    block.metadata[QStringLiteral("taskStatus")] = QStringLiteral(" ");
+    block.raw = QStringLiteral("- [ ] ") + content;
+  } else if (typeString == QStringLiteral("list")) {
     block.type = BlockType::List;
-  else if (typeString == "embed")
-    block.type = BlockType::Embed;
-  else if (typeString == "image")
-    block.type = BlockType::Image;
-  else if (typeString == "divider")
+    block.metadata[QStringLiteral("listType")] = QStringLiteral("bullet");
+    block.raw = QStringLiteral("- ") + content;
+  } else if (typeString == QStringLiteral("embed") || typeString == QStringLiteral("image")) {
+    block.type = (typeString == QStringLiteral("image")) ? BlockType::Image : BlockType::Embed;
+    block.raw = QStringLiteral("![[") + content + QStringLiteral("]]");
+  } else if (typeString == QStringLiteral("divider")) {
     block.type = BlockType::ThematicBreak;
-  else if (typeString == "table")
-    block.type = BlockType::Table;
-  else
+    block.raw = QStringLiteral("---");
+  } else {
     block.type = BlockType::Paragraph;
+    block.raw = content;
+  }
 
   m_blocks.insert(row, block);
   endInsertRows();
@@ -239,155 +267,185 @@ void NoteBlockModel::replaceBlock(int row, const QString &text) {
   if (row < 0 || row >= m_blocks.size())
     return;
 
-  // Parse the new text
-  // We use the static parse method directly
+  m_isModified = true;
+  emit isModifiedChanged();
+
   QVector<NoteBlock> newBlocks = MarkdownParser::parse(text);
 
   if (newBlocks.isEmpty()) {
-    // If text is empty or meaningless, maybe we should just remove the block?
-    // Or replace with empty paragraph?
-    // Let's assume empty text -> empty paragraph
     NoteBlock emptyBlock;
     emptyBlock.type = BlockType::Paragraph;
-    emptyBlock.content = "";
+    emptyBlock.content = QString();
+    emptyBlock.raw = QString();
+    emptyBlock.isModified = true;
     newBlocks.append(emptyBlock);
   }
 
-  // Optimize for 1-to-1 replacement (common case)
+  for (auto &b : newBlocks) {
+    b.isModified = true;
+  }
+
   if (newBlocks.size() == 1) {
     m_blocks[row] = newBlocks.first();
     QVector<int> roles = {TypeRole, ContentRole, LevelRole, MetadataRole,
-                          LanguageRole};
+                          LanguageRole, RawRole, FormattedContentRole,
+                          FoldStateRole, IsFoldableRole, IsCollapsedRole};
     emit dataChanged(createIndex(row, 0), createIndex(row, 0), roles);
     return;
   }
 
-  // Remove old block
   beginRemoveRows(QModelIndex(), row, row);
   m_blocks.removeAt(row);
   endRemoveRows();
 
-  // Insert new blocks
-  if (!newBlocks.isEmpty()) {
-    beginInsertRows(QModelIndex(), row, row + newBlocks.size() - 1);
-    for (int i = 0; i < newBlocks.size(); ++i) {
-      m_blocks.insert(row + i, newBlocks[i]);
-    }
-    endInsertRows();
+  beginInsertRows(QModelIndex(), row, row + newBlocks.size() - 1);
+  for (int i = 0; i < newBlocks.size(); ++i) {
+    m_blocks.insert(row + i, newBlocks[i]);
   }
+  endInsertRows();
 }
 
 void NoteBlockModel::removeBlock(int row) {
   if (row < 0 || row >= m_blocks.size())
     return;
 
+  m_isModified = true;
+  emit isModifiedChanged();
+
   beginRemoveRows(QModelIndex(), row, row);
   m_blocks.removeAt(row);
   endRemoveRows();
 }
 
+void NoteBlockModel::toggleCalloutFold(int row) {
+  if (row < 0 || row >= m_blocks.size())
+    return;
+
+  if (m_blocks[row].type == BlockType::Callout) {
+    bool current = m_blocks[row].metadata.value(QStringLiteral("isCollapsed"), false).toBool();
+    m_blocks[row].metadata[QStringLiteral("isCollapsed")] = !current;
+    emit dataChanged(createIndex(row, 0), createIndex(row, 0), {IsCollapsedRole});
+  }
+}
+
 QString NoteBlockModel::getMarkdown() const {
+  // If nothing in the document was modified, return exact original markdown (100% roundtrip fidelity)
+  if (!m_isModified) {
+    return m_originalMarkdown;
+  }
+
   QString result;
-  for (const NoteBlock &block : m_blocks) {
-    // Reconstruct based on type
+  for (int i = 0; i < m_blocks.size(); ++i) {
+    const NoteBlock &block = m_blocks.at(i);
+
+    // If block was unmodified and has raw source, use it directly
+    if (!block.isModified && !block.raw.isEmpty()) {
+      result.append(block.raw);
+      result.append(QStringLiteral("\n\n"));
+      continue;
+    }
+
+    // Reconstruct modified block
     switch (block.type) {
     case BlockType::Heading:
-      result.append(QString(block.level, '#') + " " + block.content + "\n\n");
+      result.append(QString(block.level, QLatin1Char('#')) + QStringLiteral(" ") + block.content + QStringLiteral("\n\n"));
       break;
-    case BlockType::Code: {
-      // Trim content to prevent newline accumulation
-      QString codeContent = block.content;
-      // Remove leading/trailing newlines only (preserve internal whitespace)
-      while (codeContent.startsWith('\n') || codeContent.startsWith('\r')) {
-        codeContent = codeContent.mid(1);
-      }
-      while (codeContent.endsWith('\n') || codeContent.endsWith('\r')) {
-        codeContent.chop(1);
-      }
-      result.append("```" + block.language + "\n" + codeContent + "\n```\n\n");
-    } break;
-    case BlockType::Quote: {
-      QStringList lines = block.content.split('\n');
-      for (const QString &line : lines) {
-        result.append("> " + line + "\n");
-      }
-      result.append("\n");
-    } break;
-    case BlockType::Callout: {
-      result.append("> [!" +
-                    block.metadata["calloutType"].toString().toUpper() + "] " +
-                    block.metadata["title"].toString() + "\n");
-      QStringList lines = block.content.split('\n');
-      for (const QString &line : lines) {
-        result.append("> " + line + "\n");
-      }
-      result.append("\n");
-    } break;
-    case BlockType::TaskList: {
-      QString mark = " ";
-      if (block.metadata.contains("taskStatus")) {
-        mark = block.metadata["taskStatus"].toString();
-      } else {
-        mark = block.metadata["checked"].toBool() ? "x" : " ";
-      }
-      result.append(QString("- [%1] %2\n").arg(mark).arg(block.content));
-    } break;
-    case BlockType::Embed:
-      // Reconstruct ![[Note#Section]]
-      result.append(QString("![[%1]]\n\n").arg(block.content));
-      break;
-    case BlockType::Image:
 
-      // Identify if it was likely an obsidian link (no path separation) or md
-      // link
-      result.append(QString("![[%1]]\n\n").arg(block.content));
+    case BlockType::Code: {
+      QString code = block.content;
+      while (code.startsWith(QLatin1Char('\n')) || code.startsWith(QLatin1Char('\r'))) {
+        code = code.mid(1);
+      }
+      while (code.endsWith(QLatin1Char('\n')) || code.endsWith(QLatin1Char('\r'))) {
+        code.chop(1);
+      }
+      result.append(QStringLiteral("```") + block.language + QStringLiteral("\n") + code + QStringLiteral("\n```\n\n"));
       break;
+    }
+
+    case BlockType::Quote: {
+      QStringList lines = block.content.split(QLatin1Char('\n'));
+      for (const QString &line : lines) {
+        result.append(QStringLiteral("> ") + line + QStringLiteral("\n"));
+      }
+      result.append(QStringLiteral("\n"));
+      break;
+    }
+
+    case BlockType::Callout: {
+      QString calloutType = block.metadata.value(QStringLiteral("calloutType"), QStringLiteral("NOTE")).toString().toUpper();
+      QString foldState = block.metadata.value(QStringLiteral("foldState"), QString()).toString();
+      QString title = block.metadata.value(QStringLiteral("title"), QString()).toString();
+
+      result.append(QStringLiteral("> [!") + calloutType + QStringLiteral("]") + foldState +
+                    (title.isEmpty() ? QString() : (QStringLiteral(" ") + title)) + QStringLiteral("\n"));
+
+      QStringList lines = block.content.split(QLatin1Char('\n'));
+      for (const QString &line : lines) {
+        result.append(QStringLiteral("> ") + line + QStringLiteral("\n"));
+      }
+      result.append(QStringLiteral("\n"));
+      break;
+    }
+
+    case BlockType::TaskList: {
+      QString mark = block.metadata.value(QStringLiteral("taskStatus"), QString()).toString();
+      if (mark.isEmpty()) {
+        mark = block.metadata.value(QStringLiteral("checked"), false).toBool() ? QStringLiteral("x") : QStringLiteral(" ");
+      }
+      result.append(QStringLiteral("- [") + mark + QStringLiteral("] ") + block.content + QStringLiteral("\n"));
+      break;
+    }
+
+    case BlockType::Embed:
+    case BlockType::Image:
+      result.append(QStringLiteral("![[") + block.content + QStringLiteral("]]\n\n"));
+      break;
+
     case BlockType::List: {
-      // Check metadata for ordered vs unordered
-      bool isOrdered = block.metadata["listType"].toString() == "ordered";
-      if (isOrdered) {
-        // We could track index, but for now simple reconstruction:
-        result.append("1. " + block.content + "\n");
-      } else {
-        result.append("* " + block.content + "\n");
-      }
-    } break;
-    case BlockType::ThematicBreak:
-      result.append("---\n\n");
+      bool isOrdered = (block.metadata.value(QStringLiteral("listType")).toString() == QStringLiteral("ordered"));
+      result.append((isOrdered ? QStringLiteral("1. ") : QStringLiteral("- ")) + block.content + QStringLiteral("\n"));
       break;
+    }
+
+    case BlockType::ThematicBreak:
+      result.append(QStringLiteral("---\n\n"));
+      break;
+
     case BlockType::Table: {
-      // Reconstruct markdown table from metadata rows
-      QVariantList rows = block.metadata["rows"].toList();
-      for (int i = 0; i < rows.size(); ++i) {
-        QVariantList cells = rows[i].toList();
-        result.append("|");
+      QVariantList rows = block.metadata.value(QStringLiteral("rows")).toList();
+      for (int r = 0; r < rows.size(); ++r) {
+        QVariantList cells = rows[r].toList();
+        result.append(QLatin1Char('|'));
         for (const QVariant &cell : cells) {
-          result.append(" " + cell.toString() + " |");
+          result.append(QStringLiteral(" ") + cell.toString() + QStringLiteral(" |"));
         }
-        result.append("\n");
-        // Add separator row after header (first row)
-        if (i == 0 && !cells.isEmpty()) {
-          result.append("|");
-          for (int j = 0; j < cells.size(); ++j) {
-            result.append(" --- |");
+        result.append(QLatin1Char('\n'));
+        if (r == 0 && !cells.isEmpty()) {
+          result.append(QLatin1Char('|'));
+          for (int c = 0; c < cells.size(); ++c) {
+            result.append(QStringLiteral(" --- |"));
           }
-          result.append("\n");
+          result.append(QLatin1Char('\n'));
         }
       }
-      result.append("\n");
-    } break;
+      result.append(QStringLiteral("\n"));
+      break;
+    }
+
+    case BlockType::Paragraph:
     default:
-      result.append(block.content + "\n\n");
+      result.append(block.content + QStringLiteral("\n\n"));
       break;
     }
   }
+
   return result.trimmed();
 }
 
 void NoteBlockModel::setDarkMode(bool dark) {
   if (m_darkMode != dark) {
     m_darkMode = dark;
-    // Notify all rows that formatted content has changed
     if (!m_blocks.isEmpty()) {
       emit dataChanged(createIndex(0, 0), createIndex(m_blocks.size() - 1, 0),
                        {FormattedContentRole});

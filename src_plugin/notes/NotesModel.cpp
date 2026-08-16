@@ -1,8 +1,10 @@
 #include "NotesModel.h"
 #include "NotesIndex.h"
+#include "ObsidianParser.h"
 #include <QDateTime>
 #include <QFile>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QTextStream>
 #include <QtConcurrent>
 
@@ -65,10 +67,7 @@ QVariant NotesModel::data(const QModelIndex &index, int role) const {
   case ColorRole:
     return item.color;
   case PreviewRole:
-    // Lazy load preview if not yet loaded
     if (item.preview.isEmpty() && item.type == QLatin1String("note")) {
-      // Note: In a real scenario, we might want to make this async
-      // For now, we load it on demand
       const_cast<NoteItem &>(item).preview = createPreview(item.path);
     }
     return item.preview;
@@ -99,7 +98,6 @@ void NotesModel::setCurrentPath(const QString &path) {
       QDir::cleanPath(QFileInfo(normalizedPath).absoluteFilePath());
 
   if (m_currentPath != normalizedPath) {
-    // Remove old path from watcher
     if (!m_currentPath.isEmpty() &&
         m_fsWatcher->directories().contains(m_currentPath)) {
       m_fsWatcher->removePath(m_currentPath);
@@ -108,12 +106,10 @@ void NotesModel::setCurrentPath(const QString &path) {
     m_currentPath = normalizedPath;
     emit currentPathChanged();
 
-    // Add new path to watcher
     if (!m_currentPath.isEmpty() && QDir(m_currentPath).exists()) {
       m_fsWatcher->addPath(m_currentPath);
     }
 
-    // Clear search mode when changing paths
     if (m_isSearchMode) {
       m_isSearchMode = false;
       m_filterString.clear();
@@ -141,16 +137,13 @@ void NotesModel::setRootPath(const QString &path) {
     m_rootPath = normalizedPath;
     emit rootPathChanged();
 
-    // Ensure root directory exists
     QDir dir(m_rootPath);
     if (!dir.exists()) {
       dir.mkpath(m_rootPath);
     }
 
-    // Initialize the NotesIndex
     NotesIndex::instance()->setRootPath(m_rootPath);
 
-    // Reset to root
     m_folderStack.clear();
     emit folderStackChanged();
     setCurrentPath(m_rootPath);
@@ -171,8 +164,6 @@ void NotesModel::setFilterString(const QString &filter) {
     if (!filter.isEmpty()) {
       m_isSearchMode = true;
       emit isSearchModeChanged();
-
-      // Search by title/tags using the index
       loadFromIndex();
     } else {
       clearFilters();
@@ -244,7 +235,6 @@ void NotesModel::togglePin(const QString &path) {
   normalizedPath =
       QDir::cleanPath(QFileInfo(normalizedPath).absoluteFilePath());
 
-  // Read the file
   QFile file(normalizedPath);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
     return;
@@ -252,51 +242,25 @@ void NotesModel::togglePin(const QString &path) {
   QString content = QTextStream(&file).readAll();
   file.close();
 
-  // Toggle pinned status in frontmatter
-  bool currentlyPinned = false;
+  FrontmatterData fm = ObsidianParser::splitFrontmatter(content);
+  bool newPinned = !fm.isPinned;
 
-  if (content.startsWith(QLatin1String("---"))) {
-    int endIdx = content.indexOf(QLatin1String("---"), 3);
-    if (endIdx > 0) {
-      QString frontmatter = content.mid(3, endIdx - 3);
-      QRegularExpression pinnedRegex(QStringLiteral("pinned:\\s*(true|false)"),
-                                     QRegularExpression::CaseInsensitiveOption);
-      QRegularExpressionMatch match = pinnedRegex.match(frontmatter);
-      if (match.hasMatch()) {
-        currentlyPinned = match.captured(1).toLower() == QLatin1String("true");
-        // Replace the value
-        QString newFrontmatter = frontmatter;
-        newFrontmatter.replace(
-            pinnedRegex, currentlyPinned ? QStringLiteral("pinned: false")
-                                         : QStringLiteral("pinned: true"));
-        content = QStringLiteral("---") + newFrontmatter + content.mid(endIdx);
-      } else {
-        // Add pinned: true before the closing ---
-        QString newFrontmatter = frontmatter + QStringLiteral("pinned: true\n");
-        content = QStringLiteral("---") + newFrontmatter + content.mid(endIdx);
-      }
+  QVariantMap fields;
+  fields[QStringLiteral("edgegesture-pinned")] = newPinned;
+  QString updatedContent = ObsidianParser::mergeFrontmatter(content, fields);
+
+  QSaveFile saveFile(normalizedPath);
+  if (saveFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    QTextStream out(&saveFile);
+    out << updatedContent;
+    if (saveFile.commit()) {
+      NotesIndex::instance()->updateEntry(normalizedPath);
     }
-  } else {
-    // No frontmatter, add it
-    content = QStringLiteral("---\npinned: true\n---\n") + content;
   }
-
-  // Write back
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-    return;
-  }
-  QTextStream out(&file);
-  out << content;
-  file.close();
-
-  // Update the index
-  NotesIndex::instance()->updateEntry(normalizedPath);
 }
 
 void NotesModel::onEntryUpdated(const QString &path) {
-  // meaningful optimization: check if path is in current view or relevant
-  // For now, simpler to just reload the view to reflect changes (tags, pin
-  // status) Logic is fast enough since it reads from memory index
+  Q_UNUSED(path);
   loadFromIndex();
 }
 
@@ -322,7 +286,7 @@ void NotesModel::searchContent(const QString &query) {
 
   m_contentSearchWatcher->setFuture(QtConcurrent::run([rootPath, lowerQuery]() {
     QVector<NoteItem> results;
-    QDirIterator it(rootPath, {"*.md"}, QDir::Files,
+    QDirIterator it(rootPath, {QStringLiteral("*.md")}, QDir::Files,
                     QDirIterator::Subdirectories);
 
     while (it.hasNext()) {
@@ -330,7 +294,6 @@ void NotesModel::searchContent(const QString &query) {
       QFile file(filePath);
 
       if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        // Stream line by line for memory efficiency
         QTextStream in(&file);
         bool found = false;
 
@@ -369,7 +332,6 @@ QStringList NotesModel::allTags() const {
 }
 
 void NotesModel::startScan() {
-  // Legacy method - now uses loadFromIndex
   loadFromIndex();
 }
 
@@ -382,17 +344,13 @@ void NotesModel::loadFromIndex() {
   QVector<NoteMetadata> metaItems;
 
   if (!m_filterTag.isEmpty()) {
-    // Filter by tag
     metaItems = index->getNotesByTag(m_filterTag);
   } else if (!m_filterString.isEmpty()) {
-    // Search by title/tags
     metaItems = index->searchByTitle(m_filterString);
   } else {
-    // Normal folder view
     metaItems = index->getItemsInFolder(m_currentPath);
   }
 
-  // Convert NoteMetadata to NoteItem
   beginResetModel();
   m_items.clear();
 
@@ -407,7 +365,6 @@ void NotesModel::loadFromIndex() {
     item.tags = meta.tags;
     item.isPinned = meta.isPinned;
     item.lastModified = meta.lastModified;
-    // Preview is lazy loaded in data()
     m_items.append(item);
   }
 
@@ -421,13 +378,10 @@ void NotesModel::loadFromIndex() {
 void NotesModel::applySorting() {
   std::sort(m_items.begin(), m_items.end(),
             [](const NoteItem &a, const NoteItem &b) {
-              // Pinned first
               if (a.isPinned != b.isPinned)
                 return a.isPinned > b.isPinned;
-              // Folders first
               if (a.type != b.type)
                 return a.type == QLatin1String("folder");
-              // Then by lastModified descending
               return a.lastModified > b.lastModified;
             });
 }
@@ -448,7 +402,6 @@ void NotesModel::onDirectoryChanged(const QString &path) {
 }
 
 void NotesModel::onIndexReady() {
-  // Reload from updated index
   if (!m_currentPath.isEmpty()) {
     loadFromIndex();
   }
@@ -476,17 +429,9 @@ QString NotesModel::createPreview(const QString &filePath, int maxLength) {
   QString content = in.readAll();
   file.close();
 
-  QString result = content;
+  FrontmatterData fm = ObsidianParser::splitFrontmatter(content);
+  QString result = fm.rawBody.trimmed();
 
-  // Remove frontmatter
-  if (result.startsWith(QLatin1String("---"))) {
-    int endIndex = result.indexOf(QLatin1String("---"), 3);
-    if (endIndex > 0) {
-      result = result.mid(endIndex + 3).trimmed();
-    }
-  }
-
-  // Truncate to maxLength
   if (result.length() > maxLength) {
     result = result.left(maxLength) + QStringLiteral("...");
   }

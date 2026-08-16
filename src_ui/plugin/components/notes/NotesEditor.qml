@@ -13,15 +13,15 @@ Item {
 
     property string notePath: ""
     property string noteTitle: ""
-    property bool isEditing: false // Kept for compatibility, though blocks are interactive
+    property bool isEditing: false
 
     property var notesFileHandler: null
     property var notesIndex: null
     property var notesModel: null
     property string vaultRootPath: "" // Root of the notes vault for image search
 
-    property int pendingFocusIndex: -1 // Track which block should get focus on load
-    property int activeBlockIndex: -1 // Currently active/focused block (Obsidian-style)
+    // Single source of truth for editing state
+    property int editingBlockIndex: isEditing ? 0 : -1
 
     property string currentColor: "#624a73"
 
@@ -29,26 +29,81 @@ Item {
     signal closeRequested
     signal addTagRequested(string path)
     signal linkOpened(string path, string title)
-    signal requestBlockEdit(int index)
-    signal navigateUp(int fromIndex) // Signal to navigate to previous block
-    signal navigateDown(int fromIndex) // Signal to navigate to next block
+
+    function beginEditing(index) {
+        editingBlockIndex = index;
+    }
+
+    function endEditing(index) {
+        if (editingBlockIndex === index || index === undefined) {
+            editingBlockIndex = -1;
+        }
+    }
 
     // Navigation function: go to specific block
     function navigateToBlock(index, cursorAtEnd) {
         if (index >= 0 && index < blockModel.rowCount()) {
-            activeBlockIndex = index;
-            pendingFocusIndex = index;
-            // Store cursor position preference
             editorPage._cursorAtEnd = cursorAtEnd !== undefined ? cursorAtEnd : true;
-            requestBlockEdit(index);
+            editingBlockIndex = index;
+            listView.positionViewAtIndex(index, ListView.Contain);
         }
     }
     property bool _cursorAtEnd: true // Internal: cursor position for next focus
 
-    // check brightness of background color
+    // Navigate to anchor (heading or blockId)
+    function navigateToAnchor(heading, blockId) {
+        if (!heading && !blockId)
+            return;
+        for (var i = 0; i < blockModel.rowCount(); ++i) {
+            var bType = blockModel.data(blockModel.index(i, 0), NoteBlockModel.TypeRole);
+            var bContent = blockModel.data(blockModel.index(i, 0), NoteBlockModel.ContentRole);
+            if (heading && bType === "heading" && bContent && bContent.toString().trim().toLowerCase() === heading.toLowerCase()) {
+                listView.positionViewAtIndex(i, ListView.Beginning);
+                return;
+            }
+            if (blockId && bContent && bContent.toString().indexOf("^" + blockId) !== -1) {
+                listView.positionViewAtIndex(i, ListView.Beginning);
+                return;
+            }
+        }
+    }
+
+    function handleLinkActivation(rawLink) {
+        if (rawLink.startsWith("http://") || rawLink.startsWith("https://") || rawLink.startsWith("mailto:") || rawLink.startsWith("file://")) {
+            Qt.openUrlExternally(rawLink);
+            return;
+        }
+
+        if (!notesIndex)
+            return;
+
+        var info = notesIndex.resolveLinkInfo(rawLink, notePath);
+        if (info.kind === "found") {
+            if (info.bestMatch === notePath || info.bestMatch === "") {
+                navigateToAnchor(info.heading, info.blockId);
+            } else {
+                var targetTitle = info.target;
+                if (targetTitle.endsWith(".md")) {
+                    targetTitle = targetTitle.substring(0, targetTitle.length - 3);
+                }
+                editorPage.linkOpened(info.bestMatch, targetTitle);
+            }
+        } else if (info.kind === "ambiguous") {
+            // If ambiguous, open best match
+            if (info.bestMatch) {
+                editorPage.linkOpened(info.bestMatch, info.target);
+            }
+        } else {
+            // Missing: prompt confirmation
+            createMissingNoteDialog.missingTitle = info.target;
+            createMissingNoteDialog.open();
+        }
+    }
+
+    // Check brightness of background color
     function isDarkColor(c) {
         if (!c)
-            return true; // Default to dark if undefined
+            return true;
         if (c.charAt(0) !== '#')
             return true;
         var r = parseInt(c.substr(1, 2), 16);
@@ -62,27 +117,20 @@ Item {
     property color secondaryContrastColor: isDarkColor(currentColor) ? "#CCCCCC" : "#444444"
     property color editBackgroundColor: isDarkColor(currentColor) ? Qt.rgba(0, 0, 0, 0.2) : Qt.rgba(0, 0, 0, 0.05)
 
-    // Navigate to previous block (called from block when arrow up at first line)
     function goToPreviousBlock(fromIndex) {
         if (fromIndex > 0) {
-            navigateToBlock(fromIndex - 1, true); // cursor at end
+            navigateToBlock(fromIndex - 1, true);
         }
     }
 
-    // Navigate to next block (called from block when arrow down at last line)
     function goToNextBlock(fromIndex) {
         if (fromIndex < blockModel.rowCount() - 1) {
-            navigateToBlock(fromIndex + 1, false); // cursor at start
+            navigateToBlock(fromIndex + 1, false);
         }
     }
 
     NoteBlockModel {
         id: blockModel
-        onLoadingChanged: {
-            if (!loading) {
-                // Scroll to top or restore position?
-            }
-        }
     }
 
     Component.onCompleted: {
@@ -98,13 +146,9 @@ Item {
     function loadNote() {
         if (notePath !== "" && notesFileHandler && notesFileHandler.exists(notePath)) {
             var noteData = notesFileHandler.readNote(notePath);
-            // noteData.content is the raw markdown string
             blockModel.loadMarkdown(noteData.content);
             currentColor = noteData.color;
             updateContainerColor();
-
-            // Ensure we have at least one block for editing if empty
-            if (noteData.content.trim() === "") {}
         }
     }
 
@@ -114,11 +158,14 @@ Item {
             if (!blockModel.loading) {
                 if (blockModel.rowCount() === 0) {
                     blockModel.insertBlock(0, "paragraph", "");
+                    if (isEditing) {
+                        editorPage.beginEditing(0);
+                    }
+                } else if (isEditing) {
+                    Qt.callLater(function () {
+                        editorPage.navigateToBlock(0, false);
+                    });
                 }
-                // Always auto-focus first block when note loads (Obsidian-style)
-                Qt.callLater(function () {
-                    editorPage.navigateToBlock(0, false);
-                });
             }
         }
     }
@@ -194,7 +241,6 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 5
 
-                // Save Button (Explicit save is good for MVVM/File ops)
                 FluIconButton {
                     iconSource: FluentIcons.Save
                     iconSize: 16
@@ -233,7 +279,7 @@ Item {
                     iconSize: 16
                     iconColor: contrastColor
                     onClicked: {
-                        saveNote(); // Auto-save on close
+                        saveNote();
                         resetContainerColor();
                         editorPage.closeRequested();
                     }
@@ -252,15 +298,12 @@ Item {
             model: blockModel
             spacing: 10
             reuseItems: true
-
             cacheBuffer: 1000
 
-            // Handle clicks on empty area (below all delegates)
             MouseArea {
                 anchors.fill: parent
-                z: -1 // Behind delegates so delegate clicks still work
+                z: -1
                 onClicked: {
-                    // Focus the last block when clicking empty area
                     var lastIndex = blockModel.rowCount() - 1;
                     if (lastIndex >= 0) {
                         editorPage.navigateToBlock(lastIndex, true);
@@ -268,12 +311,10 @@ Item {
                 }
             }
 
-            // DelegateChooser-based block rendering
             delegate: BlockDelegate {
                 id: blockDelegate
                 width: ListView.view.width
 
-                // Pass editor context
                 editor: editorPage
                 noteListView: listView
                 notesIndex: editorPage.notesIndex
@@ -281,43 +322,33 @@ Item {
                 notePath: editorPage.notePath
                 vaultRootPath: editorPage.vaultRootPath
 
-                // Link callback
                 onLinkActivatedCallback: function (link) {
-                    var title = link.replace(/\\/g, "/");
-                    var lastSlash = title.lastIndexOf("/");
-                    if (lastSlash >= 0) {
-                        title = title.substring(lastSlash + 1);
-                    }
-                    if (title.endsWith(".md")) {
-                        title = title.substring(0, title.length - 3);
-                    }
-                    editorPage.linkOpened(link, title);
-                }
-
-                // Handle focus requests
-                Connections {
-                    target: editorPage
-                    function onRequestBlockEdit(idx) {
-                        if (idx === blockDelegate.index) {
-                            listView.currentIndex = idx;
-                            blockDelegate.isEditing = true;
-                        }
-                    }
-                    ignoreUnknownSignals: true
-                }
-
-                // Handle pending focus on component ready
-                Component.onCompleted: {
-                    if (index === editorPage.pendingFocusIndex) {
-                        listView.currentIndex = index;
-                        isEditing = true;
-                        editorPage.pendingFocusIndex = -1;
-                    }
+                    editorPage.handleLinkActivation(link);
                 }
             }
 
-            // ScrollBar
             ScrollBar.vertical: FluScrollBar {}
+        }
+    }
+
+    FluContentDialog {
+        id: createMissingNoteDialog
+        title: "Create Note"
+        implicitWidth: 340
+        property string missingTitle: ""
+        message: "The note \"" + missingTitle + "\" does not exist. Do you want to create it?"
+        negativeText: "Cancel"
+        positiveText: "Create"
+        buttonFlags: FluContentDialogType.NegativeButton | FluContentDialogType.PositiveButton
+        onPositiveClicked: {
+            if (missingTitle !== "" && notesFileHandler) {
+                var folder = notePath ? notePath.substring(0, notePath.lastIndexOf("/")) : vaultRootPath;
+                var newPath = notesFileHandler.createNote(folder, missingTitle, "", "#624a73");
+                if (newPath !== "") {
+                    notesIndex.updateEntry(newPath);
+                    editorPage.linkOpened(newPath, missingTitle);
+                }
+            }
         }
     }
 

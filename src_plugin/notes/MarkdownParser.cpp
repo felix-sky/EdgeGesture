@@ -1,4 +1,5 @@
 #include "MarkdownParser.h"
+#include "ObsidianParser.h"
 #include "md4c/src/md4c.h"
 #include <QDebug>
 #include <QRegularExpression>
@@ -9,7 +10,7 @@ struct ParseContext {
   QVector<NoteBlock> blocks;
   NoteBlock currentBlock;
   bool inBlock = false;
-  int inQuoteLevel = 0;   // Track nesting for flattening Quotes/Callouts
+  int inQuoteLevel = 0;   // Track nesting for Quotes/Callouts
   QStack<bool> listStack; // True = Ordered, False = Unordered
   QString currentTextBuffer;
 
@@ -26,17 +27,15 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
                                 void *userdata) {
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
 
-  // If we are deeper in a quote (nested), we don't start new blocks yet.
-  // We flatten everything inside the top-level quote into one block.
+  // If inside a quote, track nesting and keep collecting in quote buffer
   if (ctx->inQuoteLevel > 0) {
     if (type == MD_BLOCK_QUOTE) {
       ctx->inQuoteLevel++;
     }
-    // Add separator for paragraphs inside quotes
     if (type == MD_BLOCK_P) {
       if (!ctx->currentTextBuffer.isEmpty() &&
-          !ctx->currentTextBuffer.endsWith('\n')) {
-        ctx->currentTextBuffer.append("\n\n");
+          !ctx->currentTextBuffer.endsWith(QLatin1Char('\n'))) {
+        ctx->currentTextBuffer.append(QStringLiteral("\n"));
       }
     }
     return 0;
@@ -71,24 +70,15 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
     MD_BLOCK_LI_DETAIL *li_detail = (MD_BLOCK_LI_DETAIL *)detail;
     if (li_detail->is_task) {
       newBlock.type = BlockType::TaskList;
-      // Capture the exact char: 'x', 'X', ' ', '-', '/'
       QChar mark = QChar(li_detail->task_mark);
-      newBlock.metadata["taskStatus"] = QString(mark);
-      newBlock.metadata["checked"] = (mark == 'x' || mark == 'X');
+      newBlock.metadata[QStringLiteral("taskStatus")] = QString(mark);
+      newBlock.metadata[QStringLiteral("checked")] = (mark == QLatin1Char('x') || mark == QLatin1Char('X'));
     } else {
       newBlock.type = BlockType::List;
-      // MD4C doesn't explicitly expose parent OL/UL type here easily without
-      // context But we can check the list char or infer from context if we
-      // tracked it. For now, let's look at the source text logic or just use
-      // metadata if we can't get it. Wait, MD4C separates UL and OL blocks
-      // wrapping LI. We need to track the parent block type in context? Or we
-      // can cheat and look at the first char of the content if we have offsets?
-      // Better: let's track nesting in `enter_block` for UL/OL.
     }
     break;
   }
   case MD_BLOCK_UL:
-    // We could use this to set a context flag "inUL"
     ctx->listStack.push(false); // Unordered
     break;
   case MD_BLOCK_OL:
@@ -98,11 +88,9 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
     newBlock.type = BlockType::ThematicBreak;
     break;
   case MD_BLOCK_TABLE:
-    // Start of a table - initialize table state
-    qDebug() << "MarkdownParser: MD_BLOCK_TABLE enter - starting table parsing";
     ctx->inTable = true;
     ctx->tableRows.clear();
-    ctx->inBlock = false; // Don't create block yet, wait for all rows
+    ctx->inBlock = false;
     break;
   case MD_BLOCK_THEAD:
     ctx->inTableHeader = true;
@@ -111,18 +99,15 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
     ctx->inTableHeader = false;
     break;
   case MD_BLOCK_TR:
-    // Start a new row
     ctx->currentTableRow.clear();
     ctx->inBlock = false;
     break;
   case MD_BLOCK_TH:
   case MD_BLOCK_TD:
-    // Start a cell - clear the cell buffer
     ctx->currentCellBuffer.clear();
     ctx->inBlock = false;
     break;
   case MD_BLOCK_P:
-    // Skip paragraph blocks inside tables - cell content is handled separately
     if (ctx->inTable) {
       ctx->inBlock = false;
       break;
@@ -130,10 +115,7 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
     newBlock.type = BlockType::Paragraph;
     break;
   default:
-    // For others (UL, OL, etc.), we don't necessarily start a *content* block
-    // but we update state. However, for our flat list, we mostly ignore UL/OL
-    // containers acting only on LIs.
-    ctx->inBlock = false; // Don't flag this as an active content block
+    ctx->inBlock = false;
     break;
   }
 
@@ -145,6 +127,7 @@ static int enter_block_callback(MD_BLOCKTYPE type, void *detail,
 
 static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
                                 void *userdata) {
+  Q_UNUSED(detail);
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
 
   if (type == MD_BLOCK_UL || type == MD_BLOCK_OL) {
@@ -155,14 +138,12 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
 
   // Table cell/row/table ending handling
   if (type == MD_BLOCK_TH || type == MD_BLOCK_TD) {
-    // End of a cell - add cell content to the current row
     ctx->currentTableRow.append(ctx->currentCellBuffer.trimmed());
     ctx->currentCellBuffer.clear();
     return 0;
   }
 
   if (type == MD_BLOCK_TR) {
-    // End of a row - add the row to table rows
     if (!ctx->currentTableRow.isEmpty()) {
       ctx->tableRows.append(ctx->currentTableRow);
       ctx->currentTableRow.clear();
@@ -171,20 +152,14 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
   }
 
   if (type == MD_BLOCK_THEAD || type == MD_BLOCK_TBODY) {
-    // Just state tracking, already handled in enter
     return 0;
   }
 
   if (type == MD_BLOCK_TABLE) {
-    // End of table - create the Table block with all cells as metadata
-    qDebug()
-        << "MarkdownParser: MD_BLOCK_TABLE leave - creating table block with"
-        << ctx->tableRows.size() << "rows";
     if (!ctx->tableRows.isEmpty()) {
       NoteBlock tableBlock;
       tableBlock.type = BlockType::Table;
 
-      // Convert QVector<QVector<QString>> to QVariantList for metadata
       QVariantList rowsVariant;
       for (const auto &row : ctx->tableRows) {
         QVariantList cellsVariant;
@@ -193,59 +168,80 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
         }
         rowsVariant.append(QVariant(cellsVariant));
       }
-      tableBlock.metadata["rows"] = rowsVariant;
+      tableBlock.metadata[QStringLiteral("rows")] = rowsVariant;
+
+      // Reconstruct clean markdown representation for raw
+      QString rawTable;
+      for (int i = 0; i < ctx->tableRows.size(); ++i) {
+        const auto &row = ctx->tableRows[i];
+        rawTable.append(QLatin1Char('|'));
+        for (const QString &cell : row) {
+          rawTable.append(QStringLiteral(" ") + cell + QStringLiteral(" |"));
+        }
+        rawTable.append(QLatin1Char('\n'));
+        if (i == 0 && !row.isEmpty()) {
+          rawTable.append(QLatin1Char('|'));
+          for (int j = 0; j < row.size(); ++j) {
+            rawTable.append(QStringLiteral(" --- |"));
+          }
+          rawTable.append(QLatin1Char('\n'));
+        }
+      }
+      tableBlock.raw = rawTable.trimmed();
+      tableBlock.content = tableBlock.raw;
 
       ctx->blocks.append(tableBlock);
-      qDebug() << "MarkdownParser: Table block appended with metadata";
     }
     ctx->inTable = false;
     ctx->tableRows.clear();
     return 0;
   }
 
-  // Quote Logic
-  // ... (rest of function)
+  // Quote / Callout logic
   if (type == MD_BLOCK_QUOTE) {
     if (ctx->inQuoteLevel > 0) {
       ctx->inQuoteLevel--;
       if (ctx->inQuoteLevel == 0) {
-        // Finalize Quote Block
-        ctx->currentBlock.content = ctx->currentTextBuffer;
+        QString fullQuoteText = ctx->currentTextBuffer.trimmed();
+        CalloutInfo calloutInfo;
 
-        // Check for Callout Standard: [!INFO] Title
-        // The text buffer usually doesn't have the '>' markers.
-        // Regex: ^\[!(\w+)\](.*?)(\n|$)
-        // Note: md4c might leave leading spaces? content is usually trimmed by
-        // logic? Let's trim whitespace first.
-        QString cleanContent = ctx->currentTextBuffer.trimmed();
-
-        QRegularExpression regex(R"(^\[!(\w+)\][ \t]*(.*?)(\n|$))");
-        QRegularExpressionMatch match = regex.match(cleanContent);
-        if (match.hasMatch()) {
+        if (ObsidianParser::parseCallout(fullQuoteText, calloutInfo)) {
           ctx->currentBlock.type = BlockType::Callout;
-          ctx->currentBlock.metadata["calloutType"] =
-              match.captured(1).toLower();
-          ctx->currentBlock.metadata["title"] = match.captured(2).trimmed();
+          ctx->currentBlock.content = calloutInfo.body;
+          ctx->currentBlock.metadata[QStringLiteral("calloutType")] = calloutInfo.type;
+          ctx->currentBlock.metadata[QStringLiteral("title")] = calloutInfo.title;
+          ctx->currentBlock.metadata[QStringLiteral("foldState")] = calloutInfo.foldState;
+          ctx->currentBlock.metadata[QStringLiteral("isFoldable")] = calloutInfo.isFoldable;
+          ctx->currentBlock.metadata[QStringLiteral("isCollapsed")] = calloutInfo.isCollapsed;
 
-          // Remove the definition line from content if strict?
-          // Obsidian usually hides it.
-          // Start index of content: match end.
-          int matchEnd = match.capturedEnd(0); // End of first line
-          if (matchEnd < cleanContent.length()) {
-            ctx->currentBlock.content = cleanContent.mid(matchEnd).trimmed();
-          } else {
-            ctx->currentBlock.content = "";
+          QString headerPrefix = QStringLiteral("> [!") + calloutInfo.type.toUpper() + QStringLiteral("]") +
+                                 calloutInfo.foldState + QStringLiteral(" ") + calloutInfo.title;
+          QString bodyPrefix = calloutInfo.body.isEmpty() ? QString() : (QStringLiteral("\n") +
+                               QStringList(calloutInfo.body.split(QLatin1Char('\n'))).join(QStringLiteral("\n> ")));
+          if (!calloutInfo.body.isEmpty()) {
+            bodyPrefix = QStringLiteral("\n> ") + calloutInfo.body;
+            bodyPrefix.replace(QStringLiteral("\n"), QStringLiteral("\n> "));
           }
+          ctx->currentBlock.raw = headerPrefix + bodyPrefix;
+        } else {
+          ctx->currentBlock.type = BlockType::Quote;
+          ctx->currentBlock.content = fullQuoteText;
+          QStringList lines = fullQuoteText.split(QLatin1Char('\n'));
+          QString rawQuote;
+          for (const QString &line : lines) {
+            rawQuote.append(QStringLiteral("> ") + line + QStringLiteral("\n"));
+          }
+          ctx->currentBlock.raw = rawQuote.trimmed();
         }
 
         ctx->blocks.append(ctx->currentBlock);
         ctx->inBlock = false;
+        ctx->currentTextBuffer.clear();
       }
     }
     return 0;
   }
 
-  // If we are inside a quote, we ignore leave events of children (flattening)
   if (ctx->inQuoteLevel > 0) {
     return 0;
   }
@@ -256,99 +252,116 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
   case MD_BLOCK_LI:
     shouldPush = true;
     if (ctx->inBlock) {
-      // List Type Handling
       if (ctx->currentBlock.type == BlockType::List) {
         bool isOrdered = !ctx->listStack.isEmpty() && ctx->listStack.top();
-        ctx->currentBlock.metadata["listType"] =
-            isOrdered ? "ordered" : "bullet";
+        ctx->currentBlock.metadata[QStringLiteral("listType")] =
+            isOrdered ? QStringLiteral("ordered") : QStringLiteral("bullet");
       }
 
-      // Manual check for extended task statuses that md4c missed
+      // Check for extended task statuses md4c might miss
       if (ctx->currentBlock.type == BlockType::List) {
-        // ... (existing task check)
         QString cleanContent = ctx->currentTextBuffer.trimmed();
-        QRegularExpression regex(R"(^\[(.)\]\s+(.*)$)");
-        QRegularExpressionMatch match = regex.match(cleanContent);
+        static const QRegularExpression taskRegex(QStringLiteral("^\\[(.)\\]\\s+(.*)$"));
+        QRegularExpressionMatch match = taskRegex.match(cleanContent);
         if (match.hasMatch()) {
           ctx->currentBlock.type = BlockType::TaskList;
           QString mark = match.captured(1);
-          ctx->currentBlock.metadata["taskStatus"] = mark;
-          ctx->currentBlock.metadata["checked"] = (mark == "x" || mark == "X");
-          ctx->currentTextBuffer =
-              match.captured(2).trimmed(); // Update content to remove hook
+          ctx->currentBlock.metadata[QStringLiteral("taskStatus")] = mark;
+          ctx->currentBlock.metadata[QStringLiteral("checked")] = (mark == QStringLiteral("x") || mark == QStringLiteral("X"));
+          ctx->currentTextBuffer = match.captured(2).trimmed();
         }
+      }
+
+      if (ctx->currentBlock.type == BlockType::TaskList) {
+        QString mark = ctx->currentBlock.metadata[QStringLiteral("taskStatus")].toString();
+        if (mark.isEmpty()) {
+          mark = ctx->currentBlock.metadata[QStringLiteral("checked")].toBool() ? QStringLiteral("x") : QStringLiteral(" ");
+        }
+        ctx->currentBlock.raw = QStringLiteral("- [") + mark + QStringLiteral("] ") + ctx->currentTextBuffer;
+      } else {
+        bool isOrdered = (ctx->currentBlock.metadata[QStringLiteral("listType")].toString() == QStringLiteral("ordered"));
+        ctx->currentBlock.raw = (isOrdered ? QStringLiteral("1. ") : QStringLiteral("- ")) + ctx->currentTextBuffer;
       }
     }
     break;
-  case MD_BLOCK_P: {
-    // Check if it's a standalone Embed `![[...]]` or Image
-    // `![[...]]`/`![...](...)`
-    QString clean = ctx->currentTextBuffer.trimmed();
-    qDebug() << "MarkdownParser: P Block. Clean content:" << clean;
 
-    // 1. Check for `![[...]]`
-    QRegularExpression embedRegex(R"(^!\[\[(.*?)\]\]$)");
+  case MD_BLOCK_P: {
+    QString clean = ctx->currentTextBuffer.trimmed();
+
+    // Check for standalone Obsidian embed or markdown image
+    static const QRegularExpression embedRegex(QStringLiteral("^!(\\[\\[[^\\]]+\\]\\])$"));
     QRegularExpressionMatch embedMatch = embedRegex.match(clean);
 
-    // 2. Check for `![...](...)`
-    QRegularExpression mdImgRegex(R"(^!\[.*?\]\((.*?)\)$)");
+    static const QRegularExpression mdImgRegex(QStringLiteral("^!\\[(.*?)\\]\\((.*?)\\)$"));
     QRegularExpressionMatch mdImgMatch = mdImgRegex.match(clean);
 
     if (embedMatch.hasMatch()) {
-      QString inner = embedMatch.captured(1);
-      qDebug() << "MarkdownParser: Matched Embed Syntax. Inner content:"
-               << inner;
+      QString innerRaw = clean; // e.g. "![[image.png|100]]" or "![[Note#Heading]]"
+      ObsidianLink link = ObsidianParser::parseLink(innerRaw);
 
-      // Check extension to decide Embed vs Image
-      static const QRegularExpression imgExt(
-          R"(\.(png|jpg|jpeg|gif|bmp|svg|webp|ico|tiff?)$)",
-          QRegularExpression::CaseInsensitiveOption);
-      if (inner.contains(imgExt)) {
-        // It's an image block
+      if (link.isImage) {
         ctx->currentBlock.type = BlockType::Image;
-        ctx->currentBlock.content = inner;
-        qDebug() << "MarkdownParser: Classified as Image";
+        ctx->currentBlock.content = link.target;
+        ctx->currentBlock.metadata[QStringLiteral("target")] = link.target;
+        ctx->currentBlock.metadata[QStringLiteral("alias")] = link.alias;
+        ctx->currentBlock.metadata[QStringLiteral("width")] = link.imageWidth;
+        ctx->currentBlock.metadata[QStringLiteral("height")] = link.imageHeight;
       } else {
-        // It's a note embed
         ctx->currentBlock.type = BlockType::Embed;
-        ctx->currentBlock.content = inner;
-        qDebug() << "MarkdownParser: Classified as Embed";
+        ctx->currentBlock.content = link.target + (link.heading.isEmpty() ? QString() : (QStringLiteral("#") + link.heading))
+                                                + (link.blockId.isEmpty() ? QString() : (QStringLiteral("#^") + link.blockId));
+        ctx->currentBlock.metadata[QStringLiteral("target")] = link.target;
+        ctx->currentBlock.metadata[QStringLiteral("heading")] = link.heading;
+        ctx->currentBlock.metadata[QStringLiteral("blockId")] = link.blockId;
+        ctx->currentBlock.metadata[QStringLiteral("alias")] = link.alias;
       }
+      ctx->currentBlock.raw = clean;
     } else if (mdImgMatch.hasMatch()) {
-      // Standard markdown image is always image
       ctx->currentBlock.type = BlockType::Image;
-      ctx->currentBlock.content = mdImgMatch.captured(1); // The URL/Path
-      qDebug() << "MarkdownParser: Matched MD Image Syntax. Path:"
-               << ctx->currentBlock.content;
+      ctx->currentBlock.content = mdImgMatch.captured(2);
+      ctx->currentBlock.metadata[QStringLiteral("target")] = mdImgMatch.captured(2);
+      ctx->currentBlock.metadata[QStringLiteral("alt")] = mdImgMatch.captured(1);
+      ctx->currentBlock.raw = clean;
     } else {
-      qDebug() << "MarkdownParser: No embed/image match. Standard Paragraph.";
+      ctx->currentBlock.type = BlockType::Paragraph;
+      ctx->currentBlock.raw = ctx->currentTextBuffer;
     }
 
     shouldPush = true;
     break;
   }
-  case MD_BLOCK_HR: // Ensure we push HR blocks
+
+  case MD_BLOCK_HR:
+    ctx->currentBlock.type = BlockType::ThematicBreak;
+    ctx->currentBlock.raw = QStringLiteral("---");
+    ctx->currentBlock.content = QString();
     shouldPush = true;
     break;
+
   case MD_BLOCK_H:
-  case MD_BLOCK_CODE:
+    ctx->currentBlock.raw = QString(ctx->currentBlock.level, QLatin1Char('#')) + QStringLiteral(" ") + ctx->currentTextBuffer;
     shouldPush = true;
     break;
+
+  case MD_BLOCK_CODE: {
+    QString code = ctx->currentTextBuffer;
+    ctx->currentBlock.raw = QStringLiteral("```") + ctx->currentBlock.language + QStringLiteral("\n") + code + QStringLiteral("\n```");
+    shouldPush = true;
+    break;
+  }
+
   default:
     break;
   }
 
   if (shouldPush && ctx->inBlock) {
-    // Only update content from buffer if it wasn't already set by a specific
-    // handler (like Embed/Image)
     if (ctx->currentBlock.type != BlockType::Embed &&
-        ctx->currentBlock.type != BlockType::Image) {
+        ctx->currentBlock.type != BlockType::Image &&
+        ctx->currentBlock.type != BlockType::ThematicBreak) {
       ctx->currentBlock.content = ctx->currentTextBuffer;
     }
-    // If it is Embed/Image, we already set the content to the inner text
 
     ctx->blocks.append(ctx->currentBlock);
-
     ctx->currentTextBuffer.clear();
     ctx->inBlock = false;
   }
@@ -357,33 +370,26 @@ static int leave_block_callback(MD_BLOCKTYPE type, void *detail,
 }
 
 static int enter_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
+  Q_UNUSED(detail);
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
 
-  // Use the appropriate buffer based on table state
   QString &buffer =
       ctx->inTable ? ctx->currentCellBuffer : ctx->currentTextBuffer;
 
   if (type == MD_SPAN_STRONG)
-    buffer.append("**");
+    buffer.append(QStringLiteral("**"));
   if (type == MD_SPAN_EM)
-    buffer.append("*");
+    buffer.append(QStringLiteral("*"));
   if (type == MD_SPAN_CODE)
-    buffer.append("`");
-
-  if (type == MD_SPAN_WIKILINK) {
-    buffer.append("[[");
-  }
-
-  if (type == MD_SPAN_IMG) {
-    buffer.append("![");
-  }
-
-  if (type == MD_SPAN_LATEXMATH) {
-    buffer.append("$");
-  }
-  if (type == MD_SPAN_LATEXMATH_DISPLAY) {
-    buffer.append("$$");
-  }
+    buffer.append(QStringLiteral("`"));
+  if (type == MD_SPAN_WIKILINK)
+    buffer.append(QStringLiteral("[["));
+  if (type == MD_SPAN_IMG)
+    buffer.append(QStringLiteral("!["));
+  if (type == MD_SPAN_LATEXMATH)
+    buffer.append(QStringLiteral("$"));
+  if (type == MD_SPAN_LATEXMATH_DISPLAY)
+    buffer.append(QStringLiteral("$$"));
 
   return 0;
 }
@@ -391,43 +397,36 @@ static int enter_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
 static int leave_span_callback(MD_SPANTYPE type, void *detail, void *userdata) {
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
 
-  // Use the appropriate buffer based on table state
   QString &buffer =
       ctx->inTable ? ctx->currentCellBuffer : ctx->currentTextBuffer;
 
   if (type == MD_SPAN_STRONG)
-    buffer.append("**");
+    buffer.append(QStringLiteral("**"));
   if (type == MD_SPAN_EM)
-    buffer.append("*");
+    buffer.append(QStringLiteral("*"));
   if (type == MD_SPAN_CODE)
-    buffer.append("`");
-
-  if (type == MD_SPAN_WIKILINK) {
-    buffer.append("]]");
-  }
-
+    buffer.append(QStringLiteral("`"));
+  if (type == MD_SPAN_WIKILINK)
+    buffer.append(QStringLiteral("]]"));
   if (type == MD_SPAN_IMG) {
     MD_SPAN_IMG_DETAIL *img_detail = (MD_SPAN_IMG_DETAIL *)detail;
     QString src = QString::fromUtf8(img_detail->src.text, img_detail->src.size);
-    buffer.append(QString("](%1)").arg(src));
+    buffer.append(QStringLiteral("](%1)").arg(src));
   }
-
-  if (type == MD_SPAN_LATEXMATH) {
-    buffer.append("$");
-  }
-  if (type == MD_SPAN_LATEXMATH_DISPLAY) {
-    buffer.append("$$");
-  }
+  if (type == MD_SPAN_LATEXMATH)
+    buffer.append(QStringLiteral("$"));
+  if (type == MD_SPAN_LATEXMATH_DISPLAY)
+    buffer.append(QStringLiteral("$$"));
 
   return 0;
 }
 
 static int text_callback(MD_TEXTTYPE type, const MD_CHAR *text, MD_SIZE size,
                          void *userdata) {
+  Q_UNUSED(type);
   ParseContext *ctx = static_cast<ParseContext *>(userdata);
   QString textStr = QString::fromUtf8(text, static_cast<int>(size));
 
-  // If we're in a table, append to the cell buffer instead
   if (ctx->inTable) {
     ctx->currentCellBuffer.append(textStr);
   } else {

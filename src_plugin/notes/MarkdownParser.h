@@ -5,7 +5,6 @@
 #include <QString>
 #include <QVector>
 
-
 class MarkdownParser {
 public:
   /**

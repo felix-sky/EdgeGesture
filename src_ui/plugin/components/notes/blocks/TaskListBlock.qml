@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Controls 2.15
 import FluentUI 1.0
+import EdgeGesture.Notes 1.0
 
 Item {
     id: root
@@ -27,10 +28,7 @@ Item {
 
     property string taskStatus: metadata["taskStatus"] ? metadata["taskStatus"] : (isChecked ? "x" : " ")
 
-    // Update Model when CheckBox changes
     function toggleCheck() {
-        // Cycle: [ ] -> [x] -> [ ]
-        // If [/] or [-], clicking should probably mark as done [x]?
         var newMark = " ";
         if (taskStatus === " " || taskStatus === "") {
             newMark = "x";
@@ -40,7 +38,6 @@ Item {
 
         var newMarkdown = "- [" + newMark + "] " + root.content;
 
-        // Update via replaceBlock
         if (root.noteListView && root.noteListView.model) {
             root.noteListView.model.replaceBlock(root.blockIndex, newMarkdown);
         }
@@ -48,9 +45,8 @@ Item {
 
     RowLayout {
         anchors.fill: parent
-        spacing: 5
+        spacing: 8
 
-        // Custom CheckBox Rendering
         Rectangle {
             id: promptRect
             width: 18
@@ -62,7 +58,6 @@ Item {
             Layout.alignment: Qt.AlignTop
             Layout.topMargin: 3
 
-            // Icon for Checked [x]
             FluIcon {
                 anchors.centerIn: parent
                 iconSource: FluentIcons.Accept
@@ -71,7 +66,6 @@ Item {
                 visible: taskStatus === "x" || taskStatus === "X"
             }
 
-            // Icon for In-Progress [/]
             FluIcon {
                 anchors.centerIn: parent
                 iconSource: FluentIcons.Play
@@ -80,12 +74,11 @@ Item {
                 visible: taskStatus === "/"
             }
 
-            // Icon for Canceled [-]
             FluIcon {
                 anchors.centerIn: parent
                 iconSource: FluentIcons.Remove
                 iconSize: 12
-                iconColor: "#d13438" // Red
+                iconColor: "#d13438"
                 visible: taskStatus === "-"
             }
 
@@ -110,49 +103,14 @@ Item {
             id: textItem
             width: parent.width
             text: {
-                var t = root.content;
-                // Basic Markdown Rendering (Simplified copy from ParagraphBlock)
-
-                // Math
-                var mathColor = FluTheme.dark ? "\\color{white} " : "\\color{black} ";
-                t = t.replace(/\$\$([^\$]+)\$\$/g, function (match, p1) {
-                    var encoded = encodeURIComponent(p1);
-                    var url = "image://microtex/" + encoded + "?size=24&color=" + (FluTheme.dark ? "white" : "black");
-                    return '<br><img src="' + url + '" /><br>';
-                });
-                t = t.replace(/\$([^\$]+)\$/g, function (match, p1) {
-                    var encoded = encodeURIComponent(p1);
-                    var url = "image://microtex/" + encoded + "?size=16&color=" + (FluTheme.dark ? "white" : "black");
-                    return '<img src="' + url + '" align="middle" />';
-                });
-
-                // Bold
-                t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-                t = t.replace(/__([^_]+)__/g, '<b>$1</b>');
-                // Italic
-                t = t.replace(/\*([^*]+)\*/g, '<i>$1</i>');
-                t = t.replace(/_([^_]+)_/g, '<i>$1</i>');
-
-                // Highlight
-                var highlightColor = FluTheme.dark ? "rgba(255, 215, 0, 0.4)" : "rgba(255, 255, 0, 0.5)";
-                t = t.replace(/==(.*?)==/g, '<span style="background-color: ' + highlightColor + ';">$1</span>');
-
-                // Strikethrough
-                t = t.replace(/~~([^~]+)~~/g, '<s>$1</s>');
-                // Code
-                var codeBg = FluTheme.dark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.05)";
-                var codeColor = FluTheme.primaryColor;
-                t = t.replace(/`([^`]+)`/g, '<code style="background-color: ' + codeBg + '; color: ' + codeColor + '; padding: 2px 4px; border-radius: 5px;">$1</code>');
-
-                // Links (Simplified)
-                t = t.replace(/\[\[(.*?)\]\]/g, function (match, p1) {
-                    return '<a href="' + encodeURIComponent(p1) + '">' + p1 + '</a>';
-                });
-
-                return t;
+                var raw = root.content;
+                var currentFontSize = 16;
+                var darkMode = root.editor ? root.editor.isDarkColor(root.editor.currentColor) : FluTheme.dark;
+                var processed = MathHelper.processMathToPlaceholders(raw, currentFontSize, darkMode);
+                return MathHelper.restoreMathPlaceholders(processed);
             }
             wrapMode: Text.Wrap
-            color: (taskStatus === "x" || taskStatus === "-" || root.isChecked) ? "#888888" : (FluTheme.dark ? "#cccccc" : "#222222")
+            color: (taskStatus === "x" || taskStatus === "-" || root.isChecked) ? "#888888" : (root.editor ? root.editor.contrastColor : (FluTheme.dark ? "#cccccc" : "#222222"))
             font.pixelSize: 16
             font.strikeout: (taskStatus === "x" || taskStatus === "-")
             font.family: "Segoe UI"
@@ -173,11 +131,9 @@ Item {
                     if (link) {
                         parent.linkActivated(link);
                     } else {
-                        // Switch to edit mode
-                        if (root.noteListView) {
-                            root.noteListView.currentIndex = root.blockIndex;
+                        if (root.editor) {
+                            root.editor.beginEditing(root.blockIndex);
                         }
-                        root.isEditing = true;
                     }
                 }
             }
@@ -186,11 +142,13 @@ Item {
 
     Component {
         id: editorComp
-        FluMultilineTextBox {
+        FluentEditorArea {
             width: parent.width
-            // Reconstruct full task line for editing or just content?
-            // If we edit just content, we keep the checkbox state.
             text: root.content
+
+            customTextColor: root.editor ? root.editor.contrastColor : "#000000"
+            customSelectionColor: FluTheme.primaryColor
+            customBackgroundColor: root.editor ? root.editor.editBackgroundColor : "transparent"
 
             Keys.onReturnPressed: event => handleEnter(event)
             Keys.onEnterPressed: event => handleEnter(event)
@@ -205,12 +163,10 @@ Item {
                             if (root.editor) {
                                 root.editor.navigateToBlock(idxToRemove - 1, true);
                             }
-                            if (typeof root.noteListView.model.removeBlock === "function")
-                                root.noteListView.model.removeBlock(idxToRemove);
+                            root.noteListView.model.removeBlock(idxToRemove);
                             event.accepted = true;
                         } else if (count > 1) {
-                            if (typeof root.noteListView.model.removeBlock === "function")
-                                root.noteListView.model.removeBlock(idxToRemove);
+                            root.noteListView.model.removeBlock(idxToRemove);
                             if (root.editor) {
                                 root.editor.navigateToBlock(0, false);
                             }
@@ -228,18 +184,15 @@ Item {
                 var postText = fullText.substring(pos);
 
                 if (root.noteListView && root.noteListView.model) {
-                    // Update current block content (preserving status via updateBlock only updating content)
                     root.noteListView.model.updateBlock(root.blockIndex, preText);
-
-                    // Insert new task block
                     root.noteListView.model.insertBlock(root.blockIndex + 1, "tasklist", postText);
-
-                    // Focus new block
                     if (root.editor) {
-                        root.editor.requestBlockEdit(root.blockIndex + 1);
+                        root.editor.navigateToBlock(root.blockIndex + 1, false);
                     }
                 }
-                root.isEditing = false;
+                if (root.editor) {
+                    root.editor.endEditing(root.blockIndex);
+                }
             }
 
             onEditingFinished: finishEdit()
@@ -251,13 +204,15 @@ Item {
             function finishEdit() {
                 if (root.isEditing) {
                     var newMarkdown = "- [" + root.taskStatus + "] " + text;
-
                     if (root.noteListView && root.noteListView.model) {
                         root.noteListView.model.replaceBlock(root.blockIndex, newMarkdown);
                     }
-                    root.isEditing = false;
+                    if (root.editor) {
+                        root.editor.endEditing(root.blockIndex);
+                    }
                 }
             }
+
             Component.onCompleted: {
                 forceActiveFocus();
                 cursorPosition = length;

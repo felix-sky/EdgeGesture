@@ -8,7 +8,7 @@ Item {
     width: ListView.view ? ListView.view.width - 20 : 300
     implicitHeight: editorLoader.item ? editorLoader.item.height : 0
 
-    property string content: model.content ? model.content : "" // "NoteName#Section"
+    property string content: model.content ? model.content : ""
     property bool isEditing: false
 
     property string folderPath: ""
@@ -16,17 +16,7 @@ Item {
     property var editor: null
     property var onLinkActivatedCallback: null
     property var notesIndex: null
-    onNotesIndexChanged: {
-        console.log("EmbedBlock: notesIndex changed, reloading content");
-        loadEmbedContent();
-    }
-
     property var notesFileHandler: null
-    onNotesFileHandlerChanged: {
-        console.log("EmbedBlock: notesFileHandler changed, reloading content");
-        loadEmbedContent();
-    }
-
     property string notePath: ""
     property string vaultRootPath: ""
     property int blockIndex: -1
@@ -43,11 +33,10 @@ Item {
     property string errorMsg: ""
 
     onContentChanged: parseContent()
+    onNotesIndexChanged: loadEmbedContent()
+    onNotesFileHandlerChanged: loadEmbedContent()
 
     function parseContent() {
-        // Content format: "Note Name#Section" or "Note Name#^blockid" or "Note Name"
-        // It comes from the parser as the inner content of ![[...]]
-
         var text = root.content;
         var hashIndex = text.indexOf('#');
         if (hashIndex !== -1) {
@@ -70,38 +59,22 @@ Item {
     }
 
     function loadEmbedContent() {
-        console.log("EmbedBlock: loadEmbedContent called for content:", root.content);
-
-        if (!notesFileHandler) {
-            console.log("EmbedBlock: Error - notesFileHandler is null");
+        if (!notesFileHandler)
             return;
-        }
-
-        if (!notesIndex) {
-            console.log("EmbedBlock: Warning - notesIndex is null");
-        } else {
-            console.log("EmbedBlock: notesIndex is available");
-        }
 
         var notePathToLoad = "";
         if (notesIndex && targetNote !== "") {
-            console.log("EmbedBlock: Searching index for title:", targetNote);
             notePathToLoad = notesIndex.findPathByTitle(targetNote);
-            console.log("EmbedBlock: Index returned path:", notePathToLoad);
         }
 
-        // Fallback to local
         if (notePathToLoad === "" && targetNote !== "" && folderPath) {
-            console.log("EmbedBlock: Checking local folder for:", targetNote);
             var local = folderPath + "/" + targetNote + ".md";
             if (notesFileHandler.exists(local)) {
                 notePathToLoad = local;
-                console.log("EmbedBlock: Found locally:", notePathToLoad);
             }
         }
 
         if (notePathToLoad === "") {
-            console.log("EmbedBlock: Failed to find note:", targetNote);
             errorMsg = "Note not found: " + targetNote;
             embedLoaded = false;
             return;
@@ -109,16 +82,12 @@ Item {
 
         var extracted = "";
         if (targetBlockId !== "") {
-            console.log("EmbedBlock: Extracting block:", targetBlockId);
             extracted = notesFileHandler.extractBlock(notePathToLoad, targetBlockId);
             embedTitle = targetNote + " > ^" + targetBlockId;
         } else if (targetSection !== "") {
-            console.log("EmbedBlock: Extracting section:", targetSection);
             extracted = notesFileHandler.extractSection(notePathToLoad, targetSection);
             embedTitle = targetNote + " > " + targetSection;
         } else {
-            // Full note
-            console.log("EmbedBlock: Reading full note");
             var data = notesFileHandler.readNote(notePathToLoad);
             extracted = data.content;
             if (extracted.length > 500)
@@ -127,18 +96,15 @@ Item {
         }
 
         if (extracted === "") {
-            console.log("EmbedBlock: Extracted content is empty");
             errorMsg = "Content not found";
             embedLoaded = false;
         } else {
-            console.log("EmbedBlock: Content loaded successfully, length:", extracted.length);
             embedBody = extracted;
             embedLoaded = true;
             errorMsg = "";
         }
     }
 
-    // Callout-like Style Colors
     readonly property color borderColor: FluTheme.dark ? "#60ccff" : "#0099cc"
     readonly property color errorColor: FluTheme.dark ? "#ff4d4f" : "#c50f1f"
     readonly property color bgColor: FluTheme.dark ? "#4d000000" : "#0d000000"
@@ -160,7 +126,6 @@ Item {
             border.width: root.embedLoaded ? 0 : 1
             radius: 4
 
-            // Left border accent (only if loaded)
             Rectangle {
                 width: 4
                 height: parent.height
@@ -179,41 +144,22 @@ Item {
                 anchors.bottomMargin: 10
                 spacing: 5
 
-                // Title / Header
                 Text {
                     text: root.embedLoaded ? root.embedTitle : "Embed Error"
                     font.bold: true
-                    font.pixelSize: 14 // Slightly smaller than Callout title
+                    font.pixelSize: 14
                     color: root.embedLoaded ? root.borderColor : root.errorColor
                     Layout.fillWidth: true
-                    visible: true
                 }
 
-                // Content
                 Text {
                     Layout.fillWidth: true
                     text: root.embedLoaded ? root.embedBody : root.errorMsg
-
                     wrapMode: Text.Wrap
                     color: FluTheme.dark ? "#e2e8f0" : "#2d3748"
                     font.pixelSize: 14
                     font.family: "Segoe UI"
-                    textFormat: Text.RichText // TODO: Add markdown processing if needed
-
-                    // Simple markdown processing for preview
-                    function process(t) {
-                        t = t.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-                        t = t.replace(/\*([^*]+)\*/g, '<i>$1</i>');
-                        var codeBg = FluTheme.dark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.05)";
-                        var codeColor = FluTheme.primaryColor;
-                        t = t.replace(/`([^`]+)`/g, '<code style="background-color: ' + codeBg + '; color: ' + codeColor + '; padding: 2px 4px; border-radius: 5px;">$1</code>');
-                        return t;
-                    }
-
-                    Component.onCompleted: {
-                        if (root.embedLoaded)
-                            text = process(root.embedBody);
-                    }
+                    textFormat: Text.RichText
                 }
             }
 
@@ -221,10 +167,9 @@ Item {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
                 onClicked: {
-                    if (root.noteListView) {
-                        root.noteListView.currentIndex = root.blockIndex;
+                    if (root.editor) {
+                        root.editor.beginEditing(root.blockIndex);
                     }
-                    root.isEditing = true;
                 }
             }
         }
@@ -240,11 +185,8 @@ Item {
             customSelectionColor: FluTheme.primaryColor
             customBackgroundColor: FluTheme.dark ? Qt.rgba(0, 0, 0, 0.2) : Qt.rgba(0, 0, 0, 0.05)
 
-            // Prevent newlines in embed block (single line)
             Keys.onReturnPressed: event => {
                 event.accepted = true;
-                // Move to next block or create new one?
-                // For now, behave like finishing edit
                 finishEdit();
             }
 
@@ -257,40 +199,11 @@ Item {
             function finishEdit() {
                 if (root.isEditing) {
                     if (root.noteListView && root.noteListView.model) {
-                        var t = text.trim();
-                        // Recursive embed fix: Check if user recursively added syntax
-                        // We want to pass the raw markdown to replaceBlock, OR pass the inner content to updateBlock if it stays an embed.
-                        // But replaceBlock expects Markdown.
-
-                        // If the user typed "![[Note]]", replaceBlock parses it as Embed block with content "Note".
-                        // If we just pass "Note" to replaceBlock, it becomes a paragraph "Note".
-                        // So we MUST pass valid markdown "![[Note]]".
-
-                        // The bug likely was:
-                        // 1. We start with content="Note". Editor text="![[Note]]".
-                        // 2. User edits to "![[Note2]]".
-                        // 3. We call replaceBlock("![[Note2]]").
-                        // 4. Parser parses "![" then "[Note2]]" ... wait.
-                        // markdown parser for ![[...]] expects ![[...]].
-
-                        // The user said: ![[![[![[...]]]]]]
-                        // This implies we were wrapping an already wrapped string?
-                        // text: "![[" + root.content + "]]" -> If root.content had "![[...]]" inside it!
-
-                        // IMPORTANT: root.content MUST NOT have the syntax. It should be just the inner text.
-                        // When we save/finishEdit, if we use replaceBlock(t), the parser runs.
-                        // If t="![[Note]]", parser sees Embed block, content="Note".
-                        // So the model updates block with content="Note".
-                        // Then QML binds content="Note".
-                        // Editor becomes "![[" + "Note" + "]]" = "![[Note]]". Correct.
-
-                        // If the user somehow got ![[![[Note]]]], it means content became "![[Note]]".
-                        // This happens if parser extracted "![[Note]]" as the content.
-                        // This would happen if input was "![[ ![[Note]] ]]"
-
-                        root.noteListView.model.replaceBlock(root.blockIndex, t);
+                        root.noteListView.model.replaceBlock(root.blockIndex, text.trim());
                     }
-                    root.isEditing = false;
+                    if (root.editor) {
+                        root.editor.endEditing(root.blockIndex);
+                    }
                 }
             }
 
@@ -301,7 +214,6 @@ Item {
         }
     }
 
-    // Refresh content when file handler or index changes
     Connections {
         target: notesIndex
         function onIndexUpdated() {

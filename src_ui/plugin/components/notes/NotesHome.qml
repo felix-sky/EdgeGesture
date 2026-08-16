@@ -22,41 +22,6 @@ Item {
         // Model is now set
     }
 
-    // Listen for model updates
-    Connections {
-        target: notesModel
-        enabled: notesModel !== null
-
-        function onCurrentPathChanged() {
-            // Path changed
-        }
-
-        // Force ListView to update when model finishes loading
-        function onLoadingChanged() {
-            if (notesModel && !notesModel.loading) {
-                forceListViewUpdate();
-            }
-        }
-    }
-
-    // Timer to force ListView refresh on next event loop
-    Timer {
-        id: refreshTimer
-        interval: 10
-        repeat: false
-        onTriggered: {
-            if (listView && homeRoot.notesModel) {
-                listView.model = null;
-                listView.model = homeRoot.notesModel;
-            }
-        }
-    }
-
-    // Force ListView to re-read its model data
-    function forceListViewUpdate() {
-        refreshTimer.start();
-    }
-
     // Refresh when this view becomes active again (after editor closes)
     StackView.onActivated: {
         if (notesModel) {

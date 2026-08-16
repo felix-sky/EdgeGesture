@@ -38,7 +38,7 @@ void Plugin::scanPlugins() {
                         "/plugin/components";
   componentPaths << QDir::currentPath() + "/plugin/components";
 
-  for (const QString &path : componentPaths) {
+  for (const QString &path : std::as_const(componentPaths)) {
     QDir dir(path);
     if (dir.exists()) {
       const QFileInfoList list =

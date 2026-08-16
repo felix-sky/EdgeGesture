@@ -8,7 +8,8 @@ Item {
     width: 300
     implicitHeight: editorLoader.item ? editorLoader.item.height : 0
 
-    property string content: model.content ? model.content : "" // "image.png"
+    property string content: model.content ? model.content : ""
+    property var metadata: ({})
     property bool isEditing: false
 
     property string folderPath: ""
@@ -24,7 +25,7 @@ Item {
     property string sourceUrl: ""
     property bool imageLoaded: false
     property string errorMsg: ""
-    property string pendingImageName: "" // Track which image we're waiting for
+    property string pendingImageName: ""
 
     onContentChanged: loadImage()
     onNotesFileHandlerChanged: loadImage()
@@ -32,7 +33,6 @@ Item {
     onVaultRootPathChanged: loadImage()
     onFolderPathChanged: loadImage()
 
-    // Listen for async image search results from C++
     Connections {
         target: notesFileHandler
         function onImagePathFound(originalName, foundPath) {
@@ -48,7 +48,7 @@ Item {
                 root.imageLoaded = false;
                 root.errorMsg = "Image not found: " + originalName;
             }
-            root.pendingImageName = ""; // Clear pending state
+            root.pendingImageName = "";
         }
     }
 
@@ -60,17 +60,28 @@ Item {
         if (!notesFileHandler)
             return;
 
-        // Reset state for new load
         imageLoaded = false;
         pendingImageName = imageName;
 
-        // 1. Try async vault search (runs in background thread)
-        if (notePath && vaultRootPath) {
-            notesFileHandler.findImageAsync(imageName, notePath, vaultRootPath);
-            return; // Wait for signal callback
+        // Try fast attachment index first
+        if (notesIndex) {
+            var found = notesIndex.findAttachment(imageName, notePath);
+            if (found && found !== "") {
+                sourceUrl = "file:///" + found.replace(/\\/g, "/");
+                imageLoaded = true;
+                errorMsg = "";
+                pendingImageName = "";
+                return;
+            }
         }
 
-        // 2. Fallback: Try relative path (fast, synchronous is OK here)
+        // Try async vault search
+        if (notePath && vaultRootPath) {
+            notesFileHandler.findImageAsync(imageName, notePath, vaultRootPath);
+            return;
+        }
+
+        // Try relative path
         if (folderPath) {
             var rel = folderPath + "/" + imageName;
             if (notesFileHandler.exists(rel)) {
@@ -82,7 +93,6 @@ Item {
             }
         }
 
-        // If we get here without vault paths, show error
         sourceUrl = "";
         imageLoaded = false;
         errorMsg = "Image not found: " + imageName;
@@ -101,26 +111,28 @@ Item {
         id: viewerComp
         Item {
             width: root.width
-            height: imgContainer.height + 10 // Padding
+            height: imgContainer.height + 10
 
             Rectangle {
                 id: imgContainer
-                width: parent.width
-                height: image.status === Image.Ready ? Math.min(image.implicitHeight, 500) : 50
-                // logical height: maintain aspect ratio, max 500px height?
-
+                width: {
+                    if (root.metadata && root.metadata.width && root.metadata.width > 0) {
+                        return Math.min(root.metadata.width, parent.width);
+                    }
+                    return parent.width;
+                }
+                height: image.status === Image.Ready ? Math.min(image.implicitHeight, 600) : 50
                 color: "transparent"
                 radius: 4
                 clip: true
-
-                anchors.centerIn: parent
+                anchors.left: parent.left
 
                 Image {
                     id: image
                     source: root.sourceUrl
                     width: parent.width
-                    sourceSize.width: parent.width  // Limit decode to display width (memory optimization)
-                    asynchronous: true  // Load in background thread to prevent UI blocking
+                    sourceSize.width: parent.width
+                    asynchronous: true
                     fillMode: Image.PreserveAspectFit
                     visible: root.imageLoaded && status === Image.Ready
                     horizontalAlignment: Image.AlignLeft
@@ -150,10 +162,9 @@ Item {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        if (root.noteListView) {
-                            root.noteListView.currentIndex = root.blockIndex;
+                        if (root.editor) {
+                            root.editor.beginEditing(root.blockIndex);
                         }
-                        root.isEditing = true;
                     }
                 }
             }
@@ -164,7 +175,6 @@ Item {
         id: editorComp
         FluentEditorArea {
             width: parent.width
-            // Reconstruct markdown syntax
             text: "![[" + root.content + "]]"
 
             customTextColor: FluTheme.dark ? "#FFFFFF" : "#000000"
@@ -186,12 +196,10 @@ Item {
                             if (root.editor) {
                                 root.editor.navigateToBlock(idxToRemove - 1, true);
                             }
-                            if (typeof root.noteListView.model.removeBlock === "function")
-                                root.noteListView.model.removeBlock(idxToRemove);
+                            root.noteListView.model.removeBlock(idxToRemove);
                             event.accepted = true;
                         } else if (count > 1) {
-                            if (typeof root.noteListView.model.removeBlock === "function")
-                                root.noteListView.model.removeBlock(idxToRemove);
+                            root.noteListView.model.removeBlock(idxToRemove);
                             if (root.editor) {
                                 root.editor.navigateToBlock(0, false);
                             }
@@ -212,7 +220,9 @@ Item {
                     if (root.noteListView && root.noteListView.model) {
                         root.noteListView.model.replaceBlock(root.blockIndex, text);
                     }
-                    root.isEditing = false;
+                    if (root.editor) {
+                        root.editor.endEditing(root.blockIndex);
+                    }
                 }
             }
 

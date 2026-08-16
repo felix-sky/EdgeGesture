@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ObsidianParser.h"
 #include <QDateTime>
 #include <QFileSystemWatcher>
 #include <QFutureWatcher>
@@ -11,14 +12,31 @@
 #include <QStringList>
 #include <QVector>
 #include <QtQml>
+#include <QtQml/qqmlregistration.h>
+
+enum class LinkResolutionKind {
+  Found,
+  Ambiguous,
+  Missing
+};
+
+struct LinkResolution {
+  LinkResolutionKind kind = LinkResolutionKind::Missing;
+  QString target;
+  QString heading;
+  QString blockId;
+  QString alias;
+  QStringList matches;
+};
 
 /**
- * @brief Lightweight metadata structure - NO content stored
+ * @brief Lightweight metadata structure for notes and attachments.
  */
 struct NoteMetadata {
   QString filePath;
   QString title;
   QStringList tags;
+  QStringList aliases;
   QDateTime lastModified;
   bool isPinned = false;
   bool isFolder = false;
@@ -26,11 +44,7 @@ struct NoteMetadata {
 };
 
 /**
- * @brief Singleton index managing metadata for all notes.
- *
- * This class maintains an in-memory index of note metadata using
- * head-only parsing (first 1024 bytes) for memory efficiency.
- * Supports instant lookups by path, tag, and title.
+ * @brief Centralized index managing metadata, backlinks, and link resolution for Obsidian vaults.
  */
 class NotesIndex : public QObject {
   Q_OBJECT
@@ -60,15 +74,19 @@ public:
   int indexProgress() const;
   int totalFiles() const;
 
-  // Lookups
+  // Lookups & Resolution
   Q_INVOKABLE NoteMetadata getMetadata(const QString &path) const;
-  Q_INVOKABLE QVector<NoteMetadata>
-  getItemsInFolder(const QString &folderPath) const;
+  Q_INVOKABLE QVector<NoteMetadata> getItemsInFolder(const QString &folderPath) const;
   Q_INVOKABLE QVector<NoteMetadata> getNotesByTag(const QString &tag) const;
   Q_INVOKABLE QVector<NoteMetadata> searchByTitle(const QString &query) const;
   Q_INVOKABLE QStringList getBacklinks(const QString &title) const;
   Q_INVOKABLE QStringList getAllTags() const;
   Q_INVOKABLE QString findPathByTitle(const QString &title) const;
+  Q_INVOKABLE QString findAttachment(const QString &name, const QString &currentNotePath = QString()) const;
+
+  // Structured Link Resolution
+  LinkResolution resolveLink(const QString &linkText, const QString &currentNotePath = QString()) const;
+  Q_INVOKABLE QVariantMap resolveLinkInfo(const QString &linkText, const QString &currentNotePath = QString()) const;
 
 signals:
   void indexingChanged();
@@ -85,11 +103,16 @@ private slots:
 private:
   static NotesIndex *s_instance;
 
-  // Core index structures
-  QHash<QString, NoteMetadata> m_index;    // path -> metadata
-  QMultiHash<QString, QString> m_tagIndex; // tag -> paths
-  QMap<QString, QStringList> m_backlinks;  // title -> source paths
-  QMap<QString, QString> m_titleToPath;    // title -> path
+  // Multi-index structures
+  QHash<QString, NoteMetadata> m_pathIndex;       // normalized absolute path -> metadata
+  QMultiHash<QString, QString> m_titleIndex;      // lowercase title -> file paths
+  QMultiHash<QString, QString> m_aliasIndex;      // lowercase alias -> file paths
+  QMultiHash<QString, QString> m_tagIndex;        // lowercase tag -> file paths
+  QHash<QString, QString> m_attachmentIndex;      // lowercase filename -> absolute path
+  QMap<QString, QStringList> m_backlinks;         // lowercase canonical target -> list of source note paths
+
+  // Cache of file mtimes and sizes for incremental rescanning
+  QHash<QString, QPair<qint64, QDateTime>> m_fileStats;
 
   // State
   QString m_rootPath;
@@ -99,15 +122,15 @@ private:
 
   // Watchers
   QFileSystemWatcher *m_fsWatcher = nullptr;
-  QFutureWatcher<QVector<NoteMetadata>> *m_watcher = nullptr;
+  struct ScanResult {
+    QVector<NoteMetadata> notes;
+    QHash<QString, QString> attachments;
+    QMap<QString, QStringList> backlinks;
+  };
+  QFutureWatcher<ScanResult> *m_watcher = nullptr;
 
-  // Parsing helpers
-  static NoteMetadata parseFileHeader(const QString &path);
-  static QString parseColor(const QString &frontmatter);
-  static QStringList parseTags(const QString &frontmatter);
-  static bool parsePinned(const QString &frontmatter);
-  static QStringList parseWikiLinks(const QString &content);
-
-  void processIndexResults(const QVector<NoteMetadata> &results);
-  void watchDirectory(const QString &path);
+  // Internal helpers
+  static NoteMetadata parseNoteFile(const QString &path, QStringList *outLinks = nullptr);
+  void processScanResults(const ScanResult &result);
+  void watchDirectoryRecursively(const QString &path);
 };

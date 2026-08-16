@@ -18,14 +18,12 @@ Item {
     property var editor: null
 
     property var onLinkActivatedCallback: null
-    property var notesFileHandler: null // For image search
-    property string notePath: "" // Current note path
-    property string vaultRootPath: "" // Root of the vault for image search
+    property var notesFileHandler: null
+    property string notePath: ""
+    property string vaultRootPath: ""
 
-    // Store next block index for timer (at root level so it survives component destruction)
     property int nextBlockIndex: -1
 
-    // Timer at root level - survives when editorComp is destroyed
     Timer {
         id: newBlockFocusTimer
         interval: 50
@@ -35,16 +33,6 @@ Item {
                 root.editor.navigateToBlock(root.nextBlockIndex, false);
                 root.nextBlockIndex = -1;
             }
-        }
-    }
-
-    // Strings for debugging
-    Component.onCompleted: {}
-
-    // Sync content when model changes
-    onContentChanged: {
-        if (!isEditing && loader.item && loader.item.text !== undefined) {
-            // binding handles this
         }
     }
 
@@ -61,12 +49,13 @@ Item {
             height: textItem.contentHeight + 20
             color: FluTheme.dark ? "#333333" : "#f0f0f0"
             radius: 4
-            // Left accent border
+
             Rectangle {
                 width: 4
                 height: parent.height
                 color: FluTheme.primaryColor
                 anchors.left: parent.left
+                radius: 2
             }
 
             Text {
@@ -74,63 +63,22 @@ Item {
                 width: parent.width - 24
                 anchors.centerIn: parent
                 wrapMode: Text.Wrap
-                // Pre-process content to handle Obsidian-style images and links via Markdown
                 text: {
                     var t = root.content;
-                    var basePath = "file:///" + root.folderPath.replace(/\\/g, "/") + "/";
-
-                    // Highlight
                     var highlightColor = FluTheme.dark ? "rgba(255, 215, 0, 0.4)" : "rgba(255, 255, 0, 0.5)";
                     t = t.replace(/==(.*?)==/g, '<span style="background-color: ' + highlightColor + ';">$1</span>');
-
-                    // Replace ![[image.png]] with standard Markdown ![image.png](url)
-                    t = t.replace(/!\[\[(.*?)\]\]/g, function (match, p1) {
-                        var src = p1;
-                        if (src.indexOf(":") === -1 && src.indexOf("/") !== 0) {
-                            src = basePath + src;
-                        } else if (src.indexOf("file://") !== 0) {
-                            src = "file:///" + src;
-                        }
-                        src = src.replace(/ /g, "%20");
-                        return '<img src="' + src + '" width="320">';
-                    });
-
-                    // Replace [[Link]] with <a href="Link">Link</a>
-                    t = t.replace(/\[\[(.*?)\]\]/g, function (match, p1) {
-                        return '<a href="' + encodeURIComponent(p1) + '">' + p1 + '</a>';
-                    });
                     return t;
                 }
-                color: FluTheme.dark ? "#cccccc" : "#555555"
+                color: root.editor ? root.editor.contrastColor : (FluTheme.dark ? "#cccccc" : "#555555")
                 font.pixelSize: 16
                 font.italic: true
                 font.family: "Segoe UI"
-                textFormat: Text.MarkdownText
-                baseUrl: root.folderPath ? "file:///" + root.folderPath.replace(/\\/g, "/") + "/" : ""
+                textFormat: Text.RichText
                 linkColor: FluTheme.primaryColor
 
-                Component.onCompleted: {
-                    console.log("QuoteBlock Ready.");
-                }
-
                 onLinkActivated: link => {
-                    var decodedLink = decodeURIComponent(link);
-                    var globalPath = "";
-                    if (root.notesIndex) {
-                        globalPath = root.notesIndex.findPathByTitle(decodedLink);
-                    }
-                    if (globalPath !== "") {
-                        if (root.onLinkActivatedCallback)
-                            root.onLinkActivatedCallback(globalPath);
-                        return;
-                    }
-                    if (decodedLink.endsWith(".md")) {
-                        var p = root.folderPath + "/" + decodedLink;
-                        if (root.onLinkActivatedCallback)
-                            root.onLinkActivatedCallback(p);
-                        return;
-                    }
-                    Qt.openUrlExternally(link);
+                    if (root.onLinkActivatedCallback)
+                        root.onLinkActivatedCallback(link);
                 }
 
                 MouseArea {
@@ -142,25 +90,14 @@ Item {
                         if (link) {
                             parent.linkActivated(link);
                         } else {
-                            if (root.noteListView) {
-                                root.noteListView.currentIndex = root.blockIndex;
-                                root.isEditing = true;
+                            if (root.editor) {
+                                root.editor.beginEditing(root.blockIndex);
                             }
                         }
                     }
                 }
             }
         }
-    }
-
-    Connections {
-        target: root.noteListView
-        function onCurrentIndexChanged() {
-            if (root.noteListView && root.noteListView.currentIndex !== root.blockIndex) {
-                root.isEditing = false;
-            }
-        }
-        ignoreUnknownSignals: true
     }
 
     Component {
@@ -172,7 +109,6 @@ Item {
             color: FluTheme.dark ? "#333333" : "#f0f0f0"
             radius: 4
 
-            // Left accent border
             Rectangle {
                 width: 4
                 height: parent.height
@@ -180,6 +116,7 @@ Item {
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
+                radius: 2
             }
 
             FluentEditorArea {
@@ -201,11 +138,9 @@ Item {
                 font.italic: true
                 font.family: "Segoe UI"
 
-                // Override the default Enter behavior
                 Keys.onReturnPressed: event => handleEnter(event)
                 Keys.onEnterPressed: event => handleEnter(event)
 
-                // Arrow key navigation between blocks
                 Keys.onUpPressed: event => {
                     var lineHeight = font.pixelSize * 1.5;
                     var isFirstLine = cursorRectangle.y < lineHeight;
@@ -266,13 +201,14 @@ Item {
 
                     if (root.noteListView && root.noteListView.model) {
                         root.noteListView.model.updateBlock(root.blockIndex, preText);
-                        // Continue quote by default
                         root.noteListView.model.insertBlock(root.blockIndex + 1, "quote", postText);
 
                         root.nextBlockIndex = root.blockIndex + 1;
                         newBlockFocusTimer.start();
                     }
-                    root.isEditing = false;
+                    if (root.editor) {
+                        root.editor.endEditing(root.blockIndex);
+                    }
                 }
 
                 Component.onCompleted: {
@@ -303,13 +239,11 @@ Item {
                 function finishEdit() {
                     if (root.isEditing) {
                         if (root.noteListView && root.noteListView.model) {
-                            if (typeof root.noteListView.model.replaceBlock === "function") {
-                                root.noteListView.model.replaceBlock(root.blockIndex, text);
-                            } else {
-                                root.noteListView.model.updateBlock(root.blockIndex, text);
-                            }
+                            root.noteListView.model.replaceBlock(root.blockIndex, text);
                         }
-                        root.isEditing = false;
+                        if (root.editor) {
+                            root.editor.endEditing(root.blockIndex);
+                        }
                     }
                 }
             }

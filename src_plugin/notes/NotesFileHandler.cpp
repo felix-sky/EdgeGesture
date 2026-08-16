@@ -1,4 +1,6 @@
 #include "NotesFileHandler.h"
+#include "ObsidianParser.h"
+#include "NotesIndex.h"
 #include <QClipboard>
 #include <QDateTime>
 #include <QDir>
@@ -9,13 +11,12 @@
 #include <QImage>
 #include <QMimeData>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QTextStream>
 #include <QUrl>
 #include <QtConcurrent>
 
-NotesFileHandler::NotesFileHandler(QObject *parent) : QObject(parent) {
-  // Constructor
-}
+NotesFileHandler::NotesFileHandler(QObject *parent) : QObject(parent) {}
 
 QString NotesFileHandler::createNote(const QString &folderPath,
                                      const QString &title,
@@ -26,19 +27,23 @@ QString NotesFileHandler::createNote(const QString &folderPath,
   QString filePath = normalizedFolder + QStringLiteral("/") + safeTitle +
                      QStringLiteral(".md");
 
-  // Build content with frontmatter
-  QString fileContent = QStringLiteral("---\ncolor: ") + color +
-                        QStringLiteral("\n---\n") + content;
+  // Build content with namespaced frontmatter
+  QVariantMap fields;
+  fields[QStringLiteral("edgegesture-color")] = color.isEmpty() ? QStringLiteral("#624a73") : color;
+  QString fileContent = ObsidianParser::mergeFrontmatter(QString(), fields, content);
 
-  QFile file(filePath);
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+  QSaveFile saveFile(filePath);
+  if (!saveFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
     qWarning() << "NotesFileHandler: Failed to create note:" << filePath;
     return QString();
   }
 
-  QTextStream out(&file);
+  QTextStream out(&saveFile);
   out << fileContent;
-  file.close();
+  if (!saveFile.commit()) {
+    qWarning() << "NotesFileHandler: Failed to commit new note:" << filePath;
+    return QString();
+  }
 
   return filePath;
 }
@@ -47,69 +52,33 @@ bool NotesFileHandler::saveNote(const QString &filePath, const QString &content,
                                 const QString &color) {
   QString normalizedPath = normalizePath(filePath);
 
-  // Read existing file to preserve frontmatter fields
-  QString existingTags;
-  QString existingPinned;
-
+  QString originalContent;
   QFile readFile(normalizedPath);
   if (readFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
     QTextStream in(&readFile);
-    QString existingContent = in.readAll();
+    originalContent = in.readAll();
     readFile.close();
-
-    // Parse existing frontmatter to preserve tags and pinned
-    if (existingContent.startsWith(QLatin1String("---"))) {
-      int endIndex = existingContent.indexOf(QLatin1String("---"), 3);
-      if (endIndex > 0) {
-        QString frontmatter = existingContent.mid(3, endIndex - 3);
-
-        // Extract tags
-        QRegularExpression tagsRegex(
-            QStringLiteral("tags:\\s*\\[([^\\]]*)\\]"));
-        QRegularExpressionMatch tagsMatch = tagsRegex.match(frontmatter);
-        if (tagsMatch.hasMatch()) {
-          existingTags = QStringLiteral("tags: [") + tagsMatch.captured(1) +
-                         QStringLiteral("]\n");
-        }
-
-        // Extract pinned
-        QRegularExpression pinnedRegex(
-            QStringLiteral("pinned:\\s*(true|false)"));
-        QRegularExpressionMatch pinnedMatch = pinnedRegex.match(frontmatter);
-        if (pinnedMatch.hasMatch()) {
-          existingPinned = QStringLiteral("pinned: ") +
-                           pinnedMatch.captured(1) + QStringLiteral("\n");
-        }
-      }
-    }
   }
 
-  // Build content with frontmatter, preserving existing fields
-  QString fileContent =
-      QStringLiteral("---\ncolor: ") + color + QStringLiteral("\n");
-  if (!existingTags.isEmpty()) {
-    fileContent += existingTags;
+  // Preserve ALL existing frontmatter properties, only updating color
+  QVariantMap fields;
+  if (!color.isEmpty()) {
+    fields[QStringLiteral("edgegesture-color")] = color;
   }
-  if (!existingPinned.isEmpty()) {
-    fileContent += existingPinned;
-  }
-  fileContent += QStringLiteral("---\n") + content;
+  QString fileContent = ObsidianParser::mergeFrontmatter(originalContent, fields, content);
 
-  QFile file(normalizedPath);
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-    qWarning() << "NotesFileHandler: Failed to save note:" << normalizedPath;
+  QSaveFile saveFile(normalizedPath);
+  if (!saveFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    qWarning() << "NotesFileHandler: Failed to open save file for note:" << normalizedPath;
     return false;
   }
 
-  QTextStream out(&file);
+  QTextStream out(&saveFile);
   out << fileContent;
-  file.close();
-
-  return true;
+  return saveFile.commit();
 }
 
 QVariantMap NotesFileHandler::readNote(const QString &filePath) {
-  qDebug() << "NotesFileHandler::readNote called for:" << filePath;
   QVariantMap result;
   result[QStringLiteral("content")] = QString();
   result[QStringLiteral("color")] = QStringLiteral("#624a73");
@@ -131,31 +100,10 @@ QVariantMap NotesFileHandler::readNote(const QString &filePath) {
   QString content = in.readAll();
   file.close();
 
-  // Parse frontmatter
-  if (content.startsWith(QLatin1String("---"))) {
-    int endIndex = content.indexOf(QLatin1String("---"), 3);
-    if (endIndex > 0) {
-      QString frontmatter = content.mid(3, endIndex - 3);
+  FrontmatterData fm = ObsidianParser::splitFrontmatter(content);
+  result[QStringLiteral("color")] = fm.color;
+  result[QStringLiteral("content")] = fm.rawBody;
 
-      // Extract color
-      QRegularExpression colorRegex(
-          QStringLiteral("color:\\s*(#[a-fA-F0-9]+)"));
-      QRegularExpressionMatch match = colorRegex.match(frontmatter);
-      if (match.hasMatch()) {
-        result[QStringLiteral("color")] = match.captured(1);
-      }
-
-      // Content after frontmatter
-      result[QStringLiteral("content")] = content.mid(endIndex + 4).trimmed();
-    } else {
-      result[QStringLiteral("content")] = content;
-    }
-  } else {
-    result[QStringLiteral("content")] = content;
-  }
-
-  qDebug() << "NotesFileHandler::readNote success. Content length:"
-           << result["content"].toString().length();
   return result;
 }
 
@@ -195,8 +143,7 @@ QString NotesFileHandler::renameItem(const QString &oldPath,
       return newPath;
     }
   } else {
-    newPath =
-        parentDir + QStringLiteral("/") + safeName + QStringLiteral(".md");
+    newPath = parentDir + QStringLiteral("/") + safeName + QStringLiteral(".md");
 
     // Read old content
     QFile oldFile(normalizedOldPath);
@@ -206,14 +153,16 @@ QString NotesFileHandler::renameItem(const QString &oldPath,
     QString content = QTextStream(&oldFile).readAll();
     oldFile.close();
 
-    // Write to new file
-    QFile newFile(newPath);
+    // Atomic write to new file
+    QSaveFile newFile(newPath);
     if (!newFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
       return QString();
     }
     QTextStream out(&newFile);
     out << content;
-    newFile.close();
+    if (!newFile.commit()) {
+      return QString();
+    }
 
     // Remove old file
     QFile::remove(normalizedOldPath);
@@ -243,7 +192,6 @@ QString NotesFileHandler::getBaseName(const QString &path) {
 
 QString NotesFileHandler::sanitizeFileName(const QString &name) {
   QString result = name;
-  // Remove invalid filename characters
   result.replace(QRegularExpression(QStringLiteral("[\\\\/:*?\"<>|]")),
                  QStringLiteral("_"));
   return result;
@@ -254,7 +202,7 @@ QString NotesFileHandler::normalizePath(const QString &path) {
   if (result.startsWith(QLatin1String("file:///"))) {
     result = QUrl(result).toLocalFile();
   }
-  return result;
+  return QDir::cleanPath(result);
 }
 
 bool NotesFileHandler::updateFrontmatter(const QString &path,
@@ -274,99 +222,36 @@ bool NotesFileHandler::updateFrontmatter(const QString &path,
   QString content = in.readAll();
   file.close();
 
-  // Format the value
-  QString valueStr;
-  if (value.typeId() == QMetaType::Bool) {
-    valueStr =
-        value.toBool() ? QStringLiteral("true") : QStringLiteral("false");
-  } else if (value.typeId() == QMetaType::QStringList) {
-    QStringList list = value.toStringList();
-    valueStr = QStringLiteral("[") + list.join(QStringLiteral(", ")) +
-               QStringLiteral("]");
-  } else {
-    valueStr = value.toString();
-  }
+  // Merge frontmatter non-destructively
+  QVariantMap fields;
+  fields[key] = value;
+  QString updatedContent = ObsidianParser::mergeFrontmatter(content, fields);
 
-  // Check if frontmatter exists
-  if (content.startsWith(QLatin1String("---"))) {
-    int endIdx = content.indexOf(QLatin1String("---"), 3);
-    if (endIdx > 0) {
-      QString frontmatter = content.mid(3, endIdx - 3);
-      QString afterFrontmatter = content.mid(endIdx);
-
-      // Check if key already exists
-      QRegularExpression keyRegex(key + QStringLiteral(":\\s*[^\\n]+"));
-      if (keyRegex.match(frontmatter).hasMatch()) {
-        // Replace existing key
-        frontmatter.replace(keyRegex, key + QStringLiteral(": ") + valueStr);
-      } else {
-        // Add new key before closing ---
-        frontmatter +=
-            key + QStringLiteral(": ") + valueStr + QStringLiteral("\n");
-      }
-
-      content = QStringLiteral("---") + frontmatter + afterFrontmatter;
-    }
-  } else {
-    // No frontmatter, create one
-    content = QStringLiteral("---\n") + key + QStringLiteral(": ") + valueStr +
-              QStringLiteral("\n---\n") + content;
-  }
-
-  // Write back
-  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-    qWarning() << "NotesFileHandler: Failed to write frontmatter update:"
+  QSaveFile saveFile(normalizedPath);
+  if (!saveFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    qWarning() << "NotesFileHandler: Failed to open save file for frontmatter update:"
                << normalizedPath;
     return false;
   }
 
-  QTextStream out(&file);
-  out << content;
-  file.close();
-
-  return true;
+  QTextStream out(&saveFile);
+  out << updatedContent;
+  return saveFile.commit();
 }
 
 QStringList NotesFileHandler::getTags(const QString &path) {
   QString normalizedPath = normalizePath(path);
-  QStringList tags;
-
   QFile file(normalizedPath);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    return tags;
+    return QStringList();
   }
 
-  // Read only header for efficiency
-  char buffer[1024];
-  qint64 bytesRead = file.read(buffer, sizeof(buffer));
-  QString header = QString::fromUtf8(buffer, static_cast<int>(bytesRead));
+  // Read full content to avoid missing tags
+  QTextStream in(&file);
+  QString content = in.readAll();
   file.close();
 
-  if (header.startsWith(QLatin1String("---"))) {
-    int endIdx = header.indexOf(QLatin1String("---"), 3);
-    if (endIdx > 0) {
-      QString frontmatter = header.mid(3, endIdx - 3);
-
-      // Match tags: [tag1, tag2, tag3]
-      QRegularExpression tagsRegex(QStringLiteral("tags:\\s*\\[([^\\]]+)\\]"));
-      QRegularExpressionMatch match = tagsRegex.match(frontmatter);
-
-      if (match.hasMatch()) {
-        QString tagsStr = match.captured(1);
-        const QStringList rawTags = tagsStr.split(QLatin1Char(','));
-        for (const QString &tag : rawTags) {
-          QString cleaned = tag.trimmed();
-          cleaned.remove(QLatin1Char('"'));
-          cleaned.remove(QLatin1Char('\''));
-          if (!cleaned.isEmpty()) {
-            tags.append(cleaned);
-          }
-        }
-      }
-    }
-  }
-
-  return tags;
+  return ObsidianParser::splitFrontmatter(content).tags;
 }
 
 QString NotesFileHandler::saveClipboardImage(const QString &folderPath) {
@@ -377,14 +262,14 @@ QString NotesFileHandler::saveClipboardImage(const QString &folderPath) {
     QImage image = qvariant_cast<QImage>(mimeData->imageData());
     if (!image.isNull()) {
       QString fileName =
-          "Pasted image " +
-          QDateTime::currentDateTime().toString("yyyyMMddHHmmss") + ".png";
-      QString fullPath = folderPath + "/" + fileName;
+          QStringLiteral("Pasted image ") +
+          QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMddHHmmss")) +
+          QStringLiteral(".png");
+      QString fullPath = folderPath + QStringLiteral("/") + fileName;
 
-      // Ensure folder exists
       QDir dir(folderPath);
       if (!dir.exists()) {
-        dir.mkpath(".");
+        dir.mkpath(QStringLiteral("."));
       }
 
       if (image.save(fullPath, "PNG")) {
@@ -392,124 +277,83 @@ QString NotesFileHandler::saveClipboardImage(const QString &folderPath) {
       }
     }
   }
-  return "";
+  return QString();
 }
 
 QString NotesFileHandler::findImage(const QString &imageName,
                                     const QString &notePath,
                                     const QString &rootPath) {
-  // 1. Check cache first (fast path)
+  // 1. Check memory cache
   if (m_imageCache.contains(imageName)) {
     QString cachedPath = m_imageCache[imageName];
     if (QFile::exists(cachedPath)) {
       return cachedPath;
-    } else {
-      // File was deleted, remove from cache
-      m_imageCache.remove(imageName);
     }
+    m_imageCache.remove(imageName);
+  }
+
+  // 2. Check NotesIndex attachment index if available
+  QString fromIndex = NotesIndex::instance()->findAttachment(imageName, notePath);
+  if (!fromIndex.isEmpty() && QFile::exists(fromIndex)) {
+    m_imageCache.insert(imageName, fromIndex);
+    return fromIndex;
   }
 
   QString normalizedRoot = normalizePath(rootPath);
   QString normalizedNotePath = normalizePath(notePath);
 
-  // Get the folder containing the note
   QFileInfo noteInfo(normalizedNotePath);
   QString noteFolder = noteInfo.absolutePath();
 
-  // List of places to check (in order of preference)
+  // Search common locations
   QStringList searchPaths;
-
-  // 1. Same folder as the note
   searchPaths << noteFolder + QStringLiteral("/") + imageName;
-
-  // 2. Attachments folder (common Obsidian pattern)
   searchPaths << noteFolder + QStringLiteral("/attachments/") + imageName;
   searchPaths << normalizedRoot + QStringLiteral("/attachments/") + imageName;
-
-  // 3. Images folder (common pattern)
   searchPaths << noteFolder + QStringLiteral("/images/") + imageName;
   searchPaths << normalizedRoot + QStringLiteral("/images/") + imageName;
-
-  // 4. Assets folder (another common pattern)
   searchPaths << noteFolder + QStringLiteral("/assets/") + imageName;
   searchPaths << normalizedRoot + QStringLiteral("/assets/") + imageName;
-
-  // 5. Root folder
   searchPaths << normalizedRoot + QStringLiteral("/") + imageName;
 
-  // Check each path (fast, common locations)
   for (const QString &path : std::as_const(searchPaths)) {
     if (QFile::exists(path)) {
       QString foundPath = QDir::cleanPath(path);
-      m_imageCache.insert(imageName, foundPath); // Cache for future lookups
+      m_imageCache.insert(imageName, foundPath);
       return foundPath;
     }
   }
 
-  // If not found in common locations, do a recursive search (expensive but
-  // thorough)
+  // Fallback recursive search
   QDirIterator it(normalizedRoot, QStringList() << imageName, QDir::Files,
                   QDirIterator::Subdirectories);
   if (it.hasNext()) {
     QString foundPath = QDir::cleanPath(it.next());
-    m_imageCache.insert(imageName, foundPath); // Cache for future lookups
+    m_imageCache.insert(imageName, foundPath);
     return foundPath;
   }
 
-  // FALLBACK: Try without "Pasted image " prefix (common Obsidian naming issue)
-  if (imageName.startsWith(QStringLiteral("Pasted image "))) {
-    QString altName = imageName.mid(13); // Remove "Pasted image " (13 chars)
-
-    // Try direct path first
-    QString altPath = noteFolder + QStringLiteral("/") + altName;
-    if (QFile::exists(altPath)) {
-      QString foundPath = QDir::cleanPath(altPath);
-      m_imageCache.insert(imageName, foundPath);
-      return foundPath;
-    }
-
-    // Recursive search with alternate name
-    QDirIterator altIt(normalizedRoot, QStringList() << altName, QDir::Files,
-                       QDirIterator::Subdirectories);
-    if (altIt.hasNext()) {
-      QString foundPath = QDir::cleanPath(altIt.next());
-      m_imageCache.insert(imageName, foundPath);
-      return foundPath;
-    }
-  }
-
-  // Not found
   return QString();
 }
 
 void NotesFileHandler::findImageAsync(const QString &imageName,
                                       const QString &notePath,
                                       const QString &rootPath) {
-  // Capture copies for thread safety
   QString imgName = imageName;
   QString noteP = notePath;
   QString rootP = rootPath;
 
   QtConcurrent::run([this, imgName, noteP, rootP]() {
-    // Run the potentially expensive findImage in a background thread
     QString resultPath = this->findImage(imgName, noteP, rootP);
-
-    // Emit signal to notify QML (signal-slot handles cross-thread delivery)
     emit this->imagePathFound(imgName, resultPath);
   });
 }
 
 QString NotesFileHandler::extractSection(const QString &notePath,
                                          const QString &sectionName) {
-  qDebug() << "NotesFileHandler::extractSection called for path:" << notePath
-           << "section:" << sectionName;
   QString normalizedPath = normalizePath(notePath);
-
   QFile file(normalizedPath);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    qWarning()
-        << "NotesFileHandler: Failed to read file for section extraction:"
-        << normalizedPath;
     return QString();
   }
 
@@ -517,78 +361,37 @@ QString NotesFileHandler::extractSection(const QString &notePath,
   QString content = in.readAll();
   file.close();
 
-  // Skip frontmatter if present
-  if (content.startsWith(QLatin1String("---"))) {
-    int endIndex = content.indexOf(QLatin1String("---"), 3);
-    if (endIndex > 0) {
-      content = content.mid(endIndex + 4);
-    }
-  }
-
-  // Parse the markdown to find headings
-  // We use a simple line-by-line approach for efficiency
-  QStringList lines = content.split(QLatin1Char('\n'));
+  FrontmatterData fm = ObsidianParser::splitFrontmatter(content);
+  QStringList lines = fm.rawBody.split(QLatin1Char('\n'));
 
   int startLine = -1;
   int startLevel = 0;
   QString sectionContent;
-
-  // Normalize search term
   QString searchTerm = sectionName.trimmed();
-  qDebug() << "NotesFileHandler::extractSection - normalized search term:"
-           << searchTerm;
 
   for (int i = 0; i < lines.size(); ++i) {
     QString line = lines[i];
-
-    // Check if this line is a heading (# Title, ## Title, etc.)
-    QRegularExpression headingRegex(QStringLiteral("^(#{1,6})\\s+(.*)$"));
+    static const QRegularExpression headingRegex(QStringLiteral("^(#{1,6})\\s+(.*)$"));
     QRegularExpressionMatch match = headingRegex.match(line);
 
     if (match.hasMatch()) {
       int level = match.captured(1).length();
       QString headingText = match.captured(2).trimmed();
 
-      // Debug log for headings found
-      // qDebug() << "NotesFileHandler::extractSection - Found heading:" <<
-      // headingText << "Level:" << level;
-
       if (startLine < 0) {
-        // Looking for the target heading
         if (headingText.compare(searchTerm, Qt::CaseInsensitive) == 0) {
-          qDebug() << "NotesFileHandler::extractSection - Found Match!"
-                   << headingText;
-          startLine = i + 1; // Start collecting from next line
+          startLine = i + 1;
           startLevel = level;
         }
       } else {
-        // Already found target, check if this heading ends the section
         if (level <= startLevel) {
-          // This heading is at same or higher level - stop here
-          qDebug()
-              << "NotesFileHandler::extractSection - Ending section at heading:"
-              << headingText;
           break;
         }
-        // Otherwise include this heading in the section content
         sectionContent += line + QLatin1Char('\n');
       }
     } else if (startLine >= 0) {
-      // We're collecting content after the target heading
       sectionContent += line + QLatin1Char('\n');
     }
-  }
-
-  if (sectionContent.isEmpty()) {
-    if (startLine >= 0) {
-      qDebug() << "NotesFileHandler::extractSection - Section found but empty "
-                  "content.";
-    } else {
-      qDebug() << "NotesFileHandler::extractSection - Section NOT found.";
-    }
-  } else {
-    qDebug() << "NotesFileHandler::extractSection - Content extracted, length:"
-             << sectionContent.length();
   }
 
   return sectionContent.trimmed();
@@ -597,11 +400,8 @@ QString NotesFileHandler::extractSection(const QString &notePath,
 QString NotesFileHandler::extractBlock(const QString &notePath,
                                        const QString &blockId) {
   QString normalizedPath = normalizePath(notePath);
-
   QFile file(normalizedPath);
   if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    qWarning() << "NotesFileHandler: Failed to read file for block extraction:"
-               << normalizedPath;
     return QString();
   }
 
@@ -609,29 +409,17 @@ QString NotesFileHandler::extractBlock(const QString &notePath,
   QString content = in.readAll();
   file.close();
 
-  // Skip frontmatter if present
-  if (content.startsWith(QLatin1String("---"))) {
-    int endIndex = content.indexOf(QLatin1String("---"), 3);
-    if (endIndex > 0) {
-      content = content.mid(endIndex + 4);
-    }
-  }
-
-  // Search for line/paragraph ending with ^blockId
-  // Pattern: any content followed by ^blockId at end of line
+  FrontmatterData fm = ObsidianParser::splitFrontmatter(content);
   QString searchPattern = QStringLiteral("\\^") +
                           QRegularExpression::escape(blockId) +
                           QStringLiteral("\\s*$");
   QRegularExpression blockRegex(searchPattern,
                                 QRegularExpression::MultilineOption);
 
-  QStringList lines = content.split(QLatin1Char('\n'));
-
+  QStringList lines = fm.rawBody.split(QLatin1Char('\n'));
   for (int i = 0; i < lines.size(); ++i) {
     QString line = lines[i];
-
     if (blockRegex.match(line).hasMatch()) {
-      // Found the block - return the content without the ^blockId marker
       QString result = line;
       result.replace(QRegularExpression(QStringLiteral("\\s*\\^") +
                                         QRegularExpression::escape(blockId) +
@@ -641,6 +429,5 @@ QString NotesFileHandler::extractBlock(const QString &notePath,
     }
   }
 
-  // Block not found
   return QString();
 }

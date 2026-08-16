@@ -6,7 +6,6 @@ import EdgeGesture.Notes 1.0
 /**
  * BlockDelegate - Wrapper component that handles common properties
  * for all block types and uses Loader with sourceComponent for type selection.
-
  */
 Item {
     id: blockDelegate
@@ -21,6 +20,10 @@ Item {
     required property var metadata
     required property int level
     required property string language
+    required property string raw
+    required property string foldState
+    required property bool isFoldable
+    required property bool isCollapsed
 
     // Passed from NotesEditor
     property var editor: null
@@ -37,13 +40,8 @@ Item {
         return p.substring(0, p.lastIndexOf("/"));
     }
 
-    // Editing state
-    property bool isEditing: false
-
-    // Reset state when pooled for reuse
-    ListView.onPooled: {
-        isEditing = false;
-    }
+    // Editing state derived solely from editor's editingBlockIndex (single source of truth)
+    readonly property bool isEditing: editor ? (editor.editingBlockIndex === index) : false
 
     // Content loader - switches component based on block type
     Loader {
@@ -76,26 +74,6 @@ Item {
                 return paragraphComp;
             }
         }
-
-        // Sync editing state bidirectionally
-        onItemChanged: {
-            if (item) {
-                item.isEditing = Qt.binding(function () {
-                    return blockDelegate.isEditing;
-                });
-            }
-        }
-    }
-
-    // Handle editing state changes from child
-    Connections {
-        target: contentLoader.item
-        function onIsEditingChanged() {
-            if (contentLoader.item) {
-                blockDelegate.isEditing = contentLoader.item.isEditing;
-            }
-        }
-        ignoreUnknownSignals: true
     }
 
     // Component definitions
@@ -116,6 +94,7 @@ Item {
             blockIndex: blockDelegate.index
             type: blockDelegate.type
             level: blockDelegate.level
+            isEditing: blockDelegate.isEditing
         }
     }
 
@@ -130,6 +109,7 @@ Item {
             notesFileHandler: blockDelegate.notesFileHandler
             blockIndex: blockDelegate.index
             language: blockDelegate.language
+            isEditing: blockDelegate.isEditing
         }
     }
 
@@ -142,6 +122,7 @@ Item {
             noteListView: blockDelegate.noteListView
             editor: blockDelegate.editor
             blockIndex: blockDelegate.index
+            isEditing: blockDelegate.isEditing
         }
     }
 
@@ -155,6 +136,11 @@ Item {
             editor: blockDelegate.editor
             blockIndex: blockDelegate.index
             metadata: blockDelegate.metadata
+            foldState: blockDelegate.foldState
+            isFoldable: blockDelegate.isFoldable
+            isCollapsed: blockDelegate.isCollapsed
+            isEditing: blockDelegate.isEditing
+            onLinkActivatedCallback: blockDelegate.onLinkActivatedCallback
         }
     }
 
@@ -168,6 +154,7 @@ Item {
             editor: blockDelegate.editor
             blockIndex: blockDelegate.index
             metadata: blockDelegate.metadata
+            isEditing: blockDelegate.isEditing
         }
     }
 
@@ -184,6 +171,7 @@ Item {
             notePath: blockDelegate.notePath
             vaultRootPath: blockDelegate.vaultRootPath
             blockIndex: blockDelegate.index
+            isEditing: blockDelegate.isEditing
         }
     }
 
@@ -192,6 +180,7 @@ Item {
         ImageBlock {
             width: blockDelegate.width
             content: blockDelegate.content
+            metadata: blockDelegate.metadata
             folderPath: blockDelegate.folderPath
             noteListView: blockDelegate.noteListView
             editor: blockDelegate.editor
@@ -199,6 +188,7 @@ Item {
             notePath: blockDelegate.notePath
             vaultRootPath: blockDelegate.vaultRootPath
             blockIndex: blockDelegate.index
+            isEditing: blockDelegate.isEditing
         }
     }
 
@@ -217,6 +207,7 @@ Item {
             onLinkActivatedCallback: blockDelegate.onLinkActivatedCallback
             blockIndex: blockDelegate.index
             metadata: blockDelegate.metadata
+            isEditing: blockDelegate.isEditing
         }
     }
 
@@ -245,6 +236,7 @@ Item {
             vaultRootPath: blockDelegate.vaultRootPath
             onLinkActivatedCallback: blockDelegate.onLinkActivatedCallback
             blockIndex: blockDelegate.index
+            isEditing: blockDelegate.isEditing
         }
     }
 }

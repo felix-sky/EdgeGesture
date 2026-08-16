@@ -127,6 +127,7 @@ qt_add_qml_module(notesplugin
 	        ${CMAKE_CURRENT_SOURCE_DIR}/NotesModel.h ${CMAKE_CURRENT_SOURCE_DIR}/NotesModel.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/NotesFileHandler.h ${CMAKE_CURRENT_SOURCE_DIR}/NotesFileHandler.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/NotesIndex.h ${CMAKE_CURRENT_SOURCE_DIR}/NotesIndex.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/ObsidianParser.h ${CMAKE_CURRENT_SOURCE_DIR}/ObsidianParser.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/MarkdownParser.h ${CMAKE_CURRENT_SOURCE_DIR}/MarkdownParser.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/NoteBlockModel.h ${CMAKE_CURRENT_SOURCE_DIR}/NoteBlockModel.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/MathRenderItem.h ${CMAKE_CURRENT_SOURCE_DIR}/MathRenderItem.cpp

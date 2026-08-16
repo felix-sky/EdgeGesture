@@ -33,7 +33,6 @@ Item {
 
     Loader {
         id: loader
-        // Determine width but don't anchor.fill to avoid height loops
         width: parent.width - 16
         x: 8
         y: 8
@@ -65,23 +64,12 @@ Item {
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 onClicked: mouse => {
-                    if (root.noteListView) {
-                        root.noteListView.currentIndex = root.blockIndex;
-                        root.isEditing = true;
+                    if (root.editor) {
+                        root.editor.beginEditing(root.blockIndex);
                     }
                 }
             }
         }
-    }
-
-    Connections {
-        target: root.noteListView
-        function onCurrentIndexChanged() {
-            if (root.noteListView && root.noteListView.currentIndex !== root.blockIndex) {
-                root.isEditing = false;
-            }
-        }
-        ignoreUnknownSignals: true
     }
 
     Component {
@@ -104,7 +92,6 @@ Item {
             }
 
             Keys.onPressed: event => {
-                // Delete empty code block on Backspace/Delete
                 if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && text.trim() === "") {
                     if (root.blockIndex >= 0 && root.noteListView && root.noteListView.model) {
                         var idxToRemove = root.blockIndex;
@@ -114,14 +101,10 @@ Item {
                             if (root.editor) {
                                 root.editor.navigateToBlock(idxToRemove - 1, true);
                             }
-                            if (typeof root.noteListView.model.removeBlock === "function") {
-                                root.noteListView.model.removeBlock(idxToRemove);
-                            }
+                            root.noteListView.model.removeBlock(idxToRemove);
                             event.accepted = true;
                         } else if (count > 1) {
-                            if (typeof root.noteListView.model.removeBlock === "function") {
-                                root.noteListView.model.removeBlock(idxToRemove);
-                            }
+                            root.noteListView.model.removeBlock(idxToRemove);
                             if (root.editor) {
                                 root.editor.navigateToBlock(0, false);
                             }
@@ -149,13 +132,14 @@ Item {
                     if (root.noteListView && root.noteListView.model) {
                         root.noteListView.model.updateBlock(root.blockIndex, text);
                     }
-                    root.isEditing = false;
+                    if (root.editor) {
+                        root.editor.endEditing(root.blockIndex);
+                    }
                 }
             }
         }
     }
 
-    // Optional: Language Badge
     Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top

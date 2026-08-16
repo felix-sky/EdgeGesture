@@ -2,21 +2,18 @@
 
 #include <QString>
 
-
 class MarkdownFormatter {
 public:
   /**
-   * @brief Format markdown content to HTML.
+   * @brief Format markdown content to HTML for display in RichText.
    * @param content Raw markdown text.
-   * @param darkMode Whether dark theme is active (affects highlight/code
-   * colors).
-   * @return HTML-formatted string for display in Text/RichText.
+   * @param darkMode Whether dark theme is active.
+   * @return HTML-formatted string.
    */
   static QString format(const QString &content, bool darkMode);
 
   /**
    * @brief Format wiki links only.
-   * Useful when other formatting is handled separately.
    */
   static QString formatWikiLinks(const QString &content);
 
