@@ -220,7 +220,13 @@ try {
     Remove-Item -Force $TempBat -ErrorAction SilentlyContinue
 }
 
-# 6. Copy Qt runtime DLLs for direct execution / debugging (x64 only)
+# 6. Copy UI plugins and Qt runtime DLLs for direct execution / debugging
+$SourcePluginDir = Join-Path $ScriptDir "src_ui\plugin"
+$TargetPluginDir = Join-Path $BuildDir "plugin"
+if (Test-Path $SourcePluginDir) {
+    Copy-Item -Path $SourcePluginDir -Destination $BuildDir -Recurse -Force
+}
+
 if ($Arch -eq "x64") {
     $TargetBinDir = Join-Path $BuildDir "bin"
     if (Test-Path $TargetBinDir) {
