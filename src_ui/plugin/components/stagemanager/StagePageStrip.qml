@@ -62,9 +62,12 @@ Item {
                             }
                         }
 
-                        ToolTip.visible: tabMouse.containsMouse
-                        ToolTip.text: modelData.title
-                        ToolTip.delay: 400
+                        ToolTip {
+                            visible: tabMouse.containsMouse
+                            text: modelData.title
+                            delay: 400
+                            popupType: Popup.Window
+                        }
                     }
                 }
             }
@@ -111,9 +114,12 @@ Item {
                             }
                         }
                     }
-                    ToolTip.visible: relMouse.containsMouse
-                    ToolTip.text: "Release Page to Desktop"
-                    ToolTip.delay: 400
+                    ToolTip {
+                        visible: relMouse.containsMouse
+                        text: "Release Page to Desktop"
+                        delay: 400
+                        popupType: Popup.Window
+                    }
                 }
 
                 // Pin / Unpin Container
@@ -140,9 +146,12 @@ Item {
                             }
                         }
                     }
-                    ToolTip.visible: pinMouse.containsMouse
-                    ToolTip.text: (root.containerController && root.containerController.isPinned) ? "Unpin Container" : "Pin on Top"
-                    ToolTip.delay: 400
+                    ToolTip {
+                        visible: pinMouse.containsMouse
+                        text: (root.containerController && root.containerController.isPinned) ? "Unpin Container" : "Pin on Top"
+                        delay: 400
+                        popupType: Popup.Window
+                    }
                 }
 
                 // Minimize Container
@@ -169,9 +178,12 @@ Item {
                             }
                         }
                     }
-                    ToolTip.visible: minMouse.containsMouse
-                    ToolTip.text: "Minimize Container"
-                    ToolTip.delay: 400
+                    ToolTip {
+                        visible: minMouse.containsMouse
+                        text: "Minimize Container"
+                        delay: 400
+                        popupType: Popup.Window
+                    }
                 }
 
                 // Close Current Application
@@ -198,9 +210,12 @@ Item {
                             }
                         }
                     }
-                    ToolTip.visible: closeAppMouse.containsMouse
-                    ToolTip.text: "Close Active App"
-                    ToolTip.delay: 400
+                    ToolTip {
+                        visible: closeAppMouse.containsMouse
+                        text: "Close Active App"
+                        delay: 400
+                        popupType: Popup.Window
+                    }
                 }
 
                 // Close Entire Container
@@ -227,9 +242,12 @@ Item {
                             }
                         }
                     }
-                    ToolTip.visible: closeContMouse.containsMouse
-                    ToolTip.text: "Close Container"
-                    ToolTip.delay: 400
+                    ToolTip {
+                        visible: closeContMouse.containsMouse
+                        text: "Close Container"
+                        delay: 400
+                        popupType: Popup.Window
+                    }
                 }
             }
         }

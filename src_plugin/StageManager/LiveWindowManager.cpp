@@ -3,6 +3,7 @@
 #include "WindowEmbedder.h"
 #include <QCoreApplication>
 #include <QDebug>
+#include <QTimer>
 #include <vector>
 
 static LiveWindowManager *g_instance = nullptr;
@@ -80,29 +81,39 @@ void LiveWindowManager::activateWindow(quint64 hwnd) {
 BOOL CALLBACK LiveWindowManager::EnumWindowsProc(HWND hwnd, LPARAM lParam) {
   LiveWindowManager *manager = (LiveWindowManager *)lParam;
   if (manager && manager->isValidWindow(hwnd)) {
-    manager->addWindow(hwnd);
+    manager->addWindow(hwnd, false);
   }
   return TRUE;
 }
 
-void LiveWindowManager::addWindow(HWND hwnd) {
+void LiveWindowManager::addWindow(HWND hwnd, bool notifyModel) {
+  if (!isValidWindow(hwnd))
+    return;
+
   int length = GetWindowTextLengthW(hwnd);
   if (length == 0)
     return;
-
-  std::vector<wchar_t> buffer(length + 1);
-  GetWindowTextW(hwnd, buffer.data(), length + 1);
-  QString title = QString::fromWCharArray(buffer.data());
 
   for (const auto &win : m_windows) {
     if ((HWND)win.hwnd == hwnd)
       return;
   }
 
+  std::vector<wchar_t> buffer(length + 1);
+  GetWindowTextW(hwnd, buffer.data(), length + 1);
+  QString title = QString::fromWCharArray(buffer.data());
+
   WindowInfo info;
   info.hwnd = (quint64)hwnd;
   info.title = title;
-  m_windows.append(info);
+
+  if (notifyModel) {
+    beginInsertRows(QModelIndex(), m_windows.count(), m_windows.count());
+    m_windows.append(info);
+    endInsertRows();
+  } else {
+    m_windows.append(info);
+  }
 }
 
 bool LiveWindowManager::isValidWindow(HWND hwnd) {
@@ -157,36 +168,22 @@ void LiveWindowManager::onWindowEvent(DWORD event, HWND hwnd) {
     removeWindow(hwnd);
   } else if (event == EVENT_OBJECT_CREATE || event == EVENT_OBJECT_SHOW) {
     if (isValidWindow(hwnd)) {
-      bool exists = false;
-      for (const auto &w : m_windows) {
-        if ((HWND)w.hwnd == hwnd) {
-          exists = true;
-          break;
-        }
-      }
-      if (!exists) {
-        int length = GetWindowTextLengthW(hwnd);
-        if (length > 0) {
-          std::vector<wchar_t> buffer(length + 1);
-          GetWindowTextW(hwnd, buffer.data(), length + 1);
-          QString title = QString::fromWCharArray(buffer.data());
-
-          WindowInfo info;
-          info.hwnd = (quint64)hwnd;
-          info.title = title;
-
-          beginInsertRows(QModelIndex(), m_windows.count(), m_windows.count());
-          m_windows.append(info);
-          endInsertRows();
-        }
-      }
+      addWindow(hwnd, true);
     } else {
-      // If it became managed or invalid, remove from sidebar
       removeWindow(hwnd);
     }
+
+    // Single-shot reconciliation for slow initializing modern windows (Explorer, Notepad, etc.)
+    QTimer::singleShot(150, this, [this, hwnd]() {
+      if (IsWindow(hwnd) && isValidWindow(hwnd)) {
+        addWindow(hwnd, true);
+      }
+    });
   } else if (event == EVENT_OBJECT_NAMECHANGE) {
+    bool found = false;
     for (int i = 0; i < m_windows.count(); ++i) {
       if ((HWND)m_windows[i].hwnd == hwnd) {
+        found = true;
         int length = GetWindowTextLengthW(hwnd);
         if (length > 0) {
           std::vector<wchar_t> buffer(length + 1);
@@ -199,6 +196,10 @@ void LiveWindowManager::onWindowEvent(DWORD event, HWND hwnd) {
         }
         break;
       }
+    }
+    // Also discover windows that were not ready when CREATE/SHOW fired
+    if (!found && isValidWindow(hwnd)) {
+      addWindow(hwnd, true);
     }
   } else if (event == EVENT_OBJECT_HIDE) {
     removeWindow(hwnd);

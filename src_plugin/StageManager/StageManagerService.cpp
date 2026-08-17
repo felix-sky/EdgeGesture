@@ -92,7 +92,13 @@ bool StageManagerService::addWindowToContainer(qint64 hwnd,
     return false;
   }
 
-  m_managedWindows.insert(nativeHwnd, page.id);
+  ManagedEntry entry;
+  entry.pageId = page.id;
+  entry.containerId = containerId;
+  entry.pid = page.identity.pid;
+  entry.tid = page.identity.tid;
+  m_managedWindows.insert(nativeHwnd, entry);
+
   m_activeContainerId = containerId;
   emit activeContainerChanged(m_activeContainerId);
   return true;
@@ -118,7 +124,12 @@ void StageManagerService::releasePage(quint64 containerId, int pageIndex) {
 
 void StageManagerService::closePage(quint64 containerId, int pageIndex) {
   if (m_containers.contains(containerId)) {
-    m_containers[containerId]->closePage(pageIndex);
+    auto *ctrl = m_containers[containerId];
+    if (pageIndex >= 0 && pageIndex < ctrl->pages().count()) {
+      HWND targetHwnd = ctrl->pages()[pageIndex].identity.hwnd;
+      m_managedWindows.remove(targetHwnd);
+      ctrl->closePage(pageIndex);
+    }
   }
 }
 
@@ -162,7 +173,29 @@ void StageManagerService::setActiveDestination(quint64 containerId) {
 }
 
 bool StageManagerService::isManaged(qint64 hwnd) const {
-  return m_managedWindows.contains((HWND)hwnd);
+  HWND nativeHwnd = (HWND)hwnd;
+  if (!m_managedWindows.contains(nativeHwnd))
+    return false;
+
+  if (!IsWindow(nativeHwnd)) {
+    const_cast<StageManagerService *>(this)->m_managedWindows.remove(nativeHwnd);
+    return false;
+  }
+
+  DWORD pid = 0;
+  GetWindowThreadProcessId(nativeHwnd, &pid);
+  const auto &entry = m_managedWindows.value(nativeHwnd);
+  if (pid == 0 || pid != entry.pid) {
+    const_cast<StageManagerService *>(this)->m_managedWindows.remove(nativeHwnd);
+    return false;
+  }
+
+  if (!m_containers.contains(entry.containerId)) {
+    const_cast<StageManagerService *>(this)->m_managedWindows.remove(nativeHwnd);
+    return false;
+  }
+
+  return true;
 }
 
 StageContainerController *

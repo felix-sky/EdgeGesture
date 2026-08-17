@@ -64,15 +64,41 @@ Window {
                 width: Math.min(implicitWidth, 250)
             }
 
+            // Touch Drag Handler
+            DragHandler {
+                id: touchDragHandler
+                target: null
+                acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Stylus
+                property point initialPos: Qt.point(0, 0)
+                onActiveChanged: {
+                    if (active) {
+                        initialPos = Qt.point(root.x, root.y);
+                        if (root.containerController) {
+                            StageManagerService.setActiveDestination(root.containerController.containerId);
+                        }
+                    }
+                }
+                onTranslationChanged: {
+                    if (active) {
+                        root.x = initialPos.x + translation.x;
+                        root.y = initialPos.y + translation.y;
+                    }
+                }
+            }
+
+            // Mouse Drag Area
             MouseArea {
                 id: dragMouse
                 anchors.fill: parent
                 hoverEnabled: true
-                onPressed: {
+                acceptedButtons: Qt.LeftButton
+                onPressed: function (mouse) {
                     if (root.containerController) {
                         StageManagerService.setActiveDestination(root.containerController.containerId);
                     }
-                    root.startSystemMove();
+                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+                        root.startSystemMove();
+                    }
                 }
             }
         }
@@ -107,50 +133,186 @@ Window {
             containerController: root.containerController
         }
 
-        // Resize Handles
-        MouseArea {
+        // Resize Handles (Touch via DragHandler, Mouse via startSystemResize)
+        Item {
             anchors.bottom: parent.bottom
             anchors.right: parent.right
-            width: 16
-            height: 16
-            cursorShape: Qt.SizeFDiagCursor
-            onPressed: root.startSystemResize(Qt.BottomEdge | Qt.RightEdge)
+            width: 20
+            height: 20
+            z: 10
+
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Stylus
+                property size initialSize: Qt.size(0, 0)
+                onActiveChanged: {
+                    if (active)
+                        initialSize = Qt.size(root.width, root.height);
+                }
+                onTranslationChanged: {
+                    if (active) {
+                        root.width = Math.max(root.minimumWidth, initialSize.width + translation.x);
+                        root.height = Math.max(root.minimumHeight, initialSize.height + translation.y);
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeFDiagCursor
+                onPressed: function (mouse) {
+                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+                        root.startSystemResize(Qt.BottomEdge | Qt.RightEdge);
+                    }
+                }
+            }
         }
 
-        MouseArea {
+        Item {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
-            width: 16
-            height: 16
-            cursorShape: Qt.SizeBDiagCursor
-            onPressed: root.startSystemResize(Qt.BottomEdge | Qt.LeftEdge)
+            width: 20
+            height: 20
+            z: 10
+
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Stylus
+                property point initialPos: Qt.point(0, 0)
+                property size initialSize: Qt.size(0, 0)
+                onActiveChanged: {
+                    if (active) {
+                        initialPos = Qt.point(root.x, root.y);
+                        initialSize = Qt.size(root.width, root.height);
+                    }
+                }
+                onTranslationChanged: {
+                    if (active) {
+                        var newW = Math.max(root.minimumWidth, initialSize.width - translation.x);
+                        var deltaW = newW - initialSize.width;
+                        root.x = initialPos.x - deltaW;
+                        root.width = newW;
+                        root.height = Math.max(root.minimumHeight, initialSize.height + translation.y);
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeBDiagCursor
+                onPressed: function (mouse) {
+                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+                        root.startSystemResize(Qt.BottomEdge | Qt.LeftEdge);
+                    }
+                }
+            }
         }
 
-        MouseArea {
+        Item {
             anchors.right: parent.right
             anchors.top: headerBar.bottom
             anchors.bottom: pageStrip.top
-            width: 6
-            cursorShape: Qt.SizeHorCursor
-            onPressed: root.startSystemResize(Qt.RightEdge)
+            width: 12
+            z: 10
+
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Stylus
+                property real initialW: 0
+                onActiveChanged: {
+                    if (active)
+                        initialW = root.width;
+                }
+                onTranslationChanged: {
+                    if (active) {
+                        root.width = Math.max(root.minimumWidth, initialW + translation.x);
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeHorCursor
+                onPressed: function (mouse) {
+                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+                        root.startSystemResize(Qt.RightEdge);
+                    }
+                }
+            }
         }
 
-        MouseArea {
+        Item {
             anchors.left: parent.left
             anchors.top: headerBar.bottom
             anchors.bottom: pageStrip.top
-            width: 6
-            cursorShape: Qt.SizeHorCursor
-            onPressed: root.startSystemResize(Qt.LeftEdge)
+            width: 12
+            z: 10
+
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Stylus
+                property point initialPos: Qt.point(0, 0)
+                property real initialW: 0
+                onActiveChanged: {
+                    if (active) {
+                        initialPos = Qt.point(root.x, root.y);
+                        initialW = root.width;
+                    }
+                }
+                onTranslationChanged: {
+                    if (active) {
+                        var newW = Math.max(root.minimumWidth, initialW - translation.x);
+                        var deltaW = newW - initialW;
+                        root.x = initialPos.x - deltaW;
+                        root.width = newW;
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeHorCursor
+                onPressed: function (mouse) {
+                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+                        root.startSystemResize(Qt.LeftEdge);
+                    }
+                }
+            }
         }
 
-        MouseArea {
+        Item {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 6
-            cursorShape: Qt.SizeVerCursor
-            onPressed: root.startSystemResize(Qt.BottomEdge)
+            anchors.leftMargin: 20
+            anchors.rightMargin: 20
+            height: 10
+            z: 10
+
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.TouchScreen | PointerDevice.Stylus
+                property real initialH: 0
+                onActiveChanged: {
+                    if (active)
+                        initialH = root.height;
+                }
+                onTranslationChanged: {
+                    if (active) {
+                        root.height = Math.max(root.minimumHeight, initialH + translation.y);
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.SizeVerCursor
+                onPressed: function (mouse) {
+                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+                        root.startSystemResize(Qt.BottomEdge);
+                    }
+                }
+            }
         }
     }
 

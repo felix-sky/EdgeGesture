@@ -2,6 +2,7 @@
 
 #include <QString>
 #include <QtGlobal>
+#include <dwmapi.h>
 #include <windows.h>
 
 using ContainerId = quint64;
@@ -37,6 +38,15 @@ struct OriginalWindowState {
   bool zoomed{false};
   bool topMost{false};
   DPI_AWARENESS_CONTEXT dpiContext{nullptr};
+  DWM_SYSTEMBACKDROP_TYPE backdropType{DWMSBT_NONE};
+  bool hasBackdropState{false};
+};
+
+struct ManagedEntry {
+  PageId pageId{0};
+  ContainerId containerId{0};
+  DWORD pid{0};
+  DWORD tid{0};
 };
 
 struct PageRecord {

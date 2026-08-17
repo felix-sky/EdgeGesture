@@ -79,6 +79,15 @@ private slots:
     QCOMPARE(state.zoomed, false);
     QCOMPARE(state.topMost, false);
     QCOMPARE((int)state.placement.length, (int)sizeof(WINDOWPLACEMENT));
+    QCOMPARE((int)state.backdropType, (int)DWMSBT_NONE);
+    QCOMPARE(state.hasBackdropState, false);
+  }
+
+  void testManagedIdentityValidation() {
+    StageManagerService service;
+    HWND fakeHwnd = (HWND)(intptr_t)0x12345678;
+    QCOMPARE(service.isManaged((qint64)fakeHwnd), false);
+    QCOMPARE(service.isManaged(0), false);
   }
 };
 

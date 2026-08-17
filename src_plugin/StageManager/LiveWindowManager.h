@@ -35,7 +35,7 @@ public:
                                     DWORD dwEventThread, DWORD dwmsEventTime);
 
 private:
-  void addWindow(HWND hwnd);
+  void addWindow(HWND hwnd, bool notifyModel = true);
   void removeWindow(HWND hwnd);
   bool isValidWindow(HWND hwnd);
   void onWindowEvent(DWORD event, HWND hwnd);

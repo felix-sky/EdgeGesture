@@ -8,16 +8,46 @@
 static const wchar_t *STAGE_HOST_CLASS_NAME =
     L"EdgeGesture_StageContainerHost";
 
+static void PaintHostBackground(HWND hwnd, HDC hdc) {
+  RECT rc;
+  GetClientRect(hwnd, &rc);
+  static HBRUSH hBackBrush = CreateSolidBrush(RGB(30, 30, 30));
+  FillRect(hdc, &rc, hBackBrush);
+}
+
+static LRESULT CALLBACK StageContentHostWndProc(HWND hwnd, UINT msg,
+                                                WPARAM wParam, LPARAM lParam) {
+  switch (msg) {
+  case WM_ERASEBKGND: {
+    HDC hdc = reinterpret_cast<HDC>(wParam);
+    PaintHostBackground(hwnd, hdc);
+    return 1;
+  }
+  case WM_PAINT: {
+    PAINTSTRUCT ps{};
+    HDC hdc = BeginPaint(hwnd, &ps);
+    PaintHostBackground(hwnd, hdc);
+    EndPaint(hwnd, &ps);
+    return 0;
+  }
+  case WM_THEMECHANGED:
+  case WM_SETTINGCHANGE:
+    InvalidateRect(hwnd, NULL, TRUE);
+    break;
+  }
+  return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
 static void RegisterStageHostClass() {
   static std::once_flag flag;
   std::call_once(flag, []() {
     WNDCLASSEXW wc = {0};
     wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.lpfnWndProc = DefWindowProcW;
+    wc.lpfnWndProc = StageContentHostWndProc;
     wc.hInstance = GetModuleHandle(NULL);
     wc.lpszClassName = STAGE_HOST_CLASS_NAME;
     wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH);
+    wc.hbrBackground = NULL;
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassExW(&wc);
   });
@@ -234,6 +264,15 @@ void StageContainerController::closePage(int index) {
     return;
 
   HWND target = m_pages[index].identity.hwnd;
+  PageId pid = m_pages[index].id;
+
+  qDebug() << "[StageManager] closePage requested for index:" << index
+           << "HWND:" << target << "pageId:" << pid;
+
+  // 1. Release / restore target window back to normal desktop top-level state
+  removePage(pid, true);
+
+  // 2. Once restored as a normal top-level window, post WM_CLOSE
   if (IsWindow(target)) {
     PostMessageW(target, WM_CLOSE, 0, 0);
   }

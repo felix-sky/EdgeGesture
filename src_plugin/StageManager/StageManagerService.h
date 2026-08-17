@@ -62,5 +62,5 @@ private:
   quint64 m_activeContainerId{0};
 
   QMap<ContainerId, StageContainerController *> m_containers;
-  QMap<HWND, PageId> m_managedWindows;
+  QMap<HWND, ManagedEntry> m_managedWindows;
 };

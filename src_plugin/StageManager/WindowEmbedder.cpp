@@ -88,6 +88,17 @@ bool WindowEmbedder::captureOriginalState(HWND hwnd,
 
   outState.dpiContext = GetWindowDpiAwarenessContext(hwnd);
 
+  DWM_SYSTEMBACKDROP_TYPE backdrop{};
+  HRESULT hrBackdrop = DwmGetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+                                             &backdrop, sizeof(backdrop));
+  if (SUCCEEDED(hrBackdrop)) {
+    outState.backdropType = backdrop;
+    outState.hasBackdropState = true;
+  } else {
+    outState.backdropType = DWMSBT_NONE;
+    outState.hasBackdropState = false;
+  }
+
   return true;
 }
 
@@ -98,10 +109,23 @@ bool WindowEmbedder::attachTarget(HWND target, HWND host,
     return false;
   }
 
+  bool hasNoRedirection = (original.exStyle & WS_EX_NOREDIRECTIONBITMAP) != 0;
+  qDebug() << "[StageManager] attachTarget: target=" << target
+           << "style=0x" + QString::number(original.style, 16)
+           << "exStyle=0x" + QString::number(original.exStyle, 16)
+           << "hasNoRedirection=" << hasNoRedirection
+           << "hasBackdrop=" << original.hasBackdropState
+           << "backdropType=" << (int)original.backdropType;
+
   // 1. Hide target during modification to prevent visual glitches
   ShowWindow(target, SW_HIDE);
 
-  // 2. Prepare child styles
+  // 2. Suppress DWM system backdrop while hosted if applicable
+  DWM_SYSTEMBACKDROP_TYPE noneBackdrop = DWMSBT_NONE;
+  DwmSetWindowAttribute(target, DWMWA_SYSTEMBACKDROP_TYPE, &noneBackdrop,
+                        sizeof(noneBackdrop));
+
+  // 3. Prepare child styles
   LONG_PTR newStyle = original.style;
   newStyle &= ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX |
                 WS_MAXIMIZEBOX | WS_SYSMENU);
@@ -131,7 +155,7 @@ bool WindowEmbedder::attachTarget(HWND target, HWND host,
     return false;
   }
 
-  // 3. SetParent to content host HWND
+  // 4. SetParent to content host HWND
   SetLastError(0);
   HWND prevParent = SetParent(target, host);
   DWORD parentErr = GetLastError();
@@ -148,12 +172,12 @@ bool WindowEmbedder::attachTarget(HWND target, HWND host,
     return false;
   }
 
-  // 4. Force frame change
+  // 5. Force frame change
   SetWindowPos(target, NULL, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
                    SWP_FRAMECHANGED);
 
-  // 5. Size to content host
+  // 6. Size to content host
   RECT rcHost;
   if (GetClientRect(host, &rcHost)) {
     int w = rcHost.right - rcHost.left;
@@ -187,15 +211,21 @@ bool WindowEmbedder::restoreTarget(HWND target,
   SetWindowLongPtrW(target, GWL_STYLE, original.style);
   SetWindowLongPtrW(target, GWL_EXSTYLE, original.exStyle);
 
-  // 4. Frame change
+  // 4. Restore DWM system backdrop if previously present
+  if (original.hasBackdropState) {
+    DwmSetWindowAttribute(target, DWMWA_SYSTEMBACKDROP_TYPE,
+                          &original.backdropType, sizeof(original.backdropType));
+  }
+
+  // 5. Frame change
   SetWindowPos(target, NULL, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
                    SWP_FRAMECHANGED);
 
-  // 5. Restore placement and geometry
+  // 6. Restore placement and geometry
   SetWindowPlacement(target, &original.placement);
 
-  // 6. Restore show state
+  // 7. Restore show state
   if (original.visible) {
     if (original.iconic) {
       ShowWindow(target, SW_MINIMIZE);
@@ -208,7 +238,7 @@ bool WindowEmbedder::restoreTarget(HWND target,
     ShowWindow(target, SW_HIDE);
   }
 
-  // 7. Re-apply topmost if it originally was topmost
+  // 8. Re-apply topmost if it originally was topmost
   if (original.topMost) {
     SetWindowPos(target, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
