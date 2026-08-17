@@ -43,7 +43,7 @@ Window {
                 width: 70
                 height: 5
                 radius: 2.5
-                color: dragMouse.containsMouse ? "#B0FFFFFF" : "#60FFFFFF"
+                color: headerHover.hovered ? "#B0FFFFFF" : "#60FFFFFF"
 
                 Behavior on color {
                     ColorAnimation {
@@ -64,7 +64,22 @@ Window {
                 width: Math.min(implicitWidth, 250)
             }
 
-            // Touch Drag Handler
+            // Hover state for header
+            HoverHandler {
+                id: headerHover
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.Stylus
+            }
+
+            // Click / Tap to activate destination container
+            TapHandler {
+                onTapped: {
+                    if (root.containerController) {
+                        StageManagerService.setActiveDestination(root.containerController.containerId);
+                    }
+                }
+            }
+
+            // Touch / Stylus Drag Handler (directly moves root.x / root.y)
             DragHandler {
                 id: touchDragHandler
                 target: null
@@ -86,17 +101,16 @@ Window {
                 }
             }
 
-            // Mouse Drag Area
-            MouseArea {
-                id: dragMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                acceptedButtons: Qt.LeftButton
-                onPressed: function (mouse) {
-                    if (root.containerController) {
-                        StageManagerService.setActiveDestination(root.containerController.containerId);
-                    }
-                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+            // Mouse Drag Handler (triggers startSystemMove)
+            DragHandler {
+                id: mouseDragHandler
+                target: null
+                acceptedDevices: PointerDevice.Mouse
+                onActiveChanged: {
+                    if (active) {
+                        if (root.containerController) {
+                            StageManagerService.setActiveDestination(root.containerController.containerId);
+                        }
                         root.startSystemMove();
                     }
                 }
@@ -134,12 +148,18 @@ Window {
         }
 
         // Resize Handles (Touch via DragHandler, Mouse via startSystemResize)
+        // 1. Bottom-Right Corner
         Item {
             anchors.bottom: parent.bottom
             anchors.right: parent.right
             width: 20
             height: 20
             z: 10
+
+            HoverHandler {
+                cursorShape: Qt.SizeFDiagCursor
+                acceptedDevices: PointerDevice.Mouse
+            }
 
             DragHandler {
                 target: null
@@ -157,23 +177,28 @@ Window {
                 }
             }
 
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.SizeFDiagCursor
-                onPressed: function (mouse) {
-                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.Mouse
+                onActiveChanged: {
+                    if (active)
                         root.startSystemResize(Qt.BottomEdge | Qt.RightEdge);
-                    }
                 }
             }
         }
 
+        // 2. Bottom-Left Corner
         Item {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             width: 20
             height: 20
             z: 10
+
+            HoverHandler {
+                cursorShape: Qt.SizeBDiagCursor
+                acceptedDevices: PointerDevice.Mouse
+            }
 
             DragHandler {
                 target: null
@@ -197,23 +222,28 @@ Window {
                 }
             }
 
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.SizeBDiagCursor
-                onPressed: function (mouse) {
-                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.Mouse
+                onActiveChanged: {
+                    if (active)
                         root.startSystemResize(Qt.BottomEdge | Qt.LeftEdge);
-                    }
                 }
             }
         }
 
+        // 3. Right Edge
         Item {
             anchors.right: parent.right
             anchors.top: headerBar.bottom
             anchors.bottom: pageStrip.top
             width: 12
             z: 10
+
+            HoverHandler {
+                cursorShape: Qt.SizeHorCursor
+                acceptedDevices: PointerDevice.Mouse
+            }
 
             DragHandler {
                 target: null
@@ -230,23 +260,28 @@ Window {
                 }
             }
 
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.SizeHorCursor
-                onPressed: function (mouse) {
-                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.Mouse
+                onActiveChanged: {
+                    if (active)
                         root.startSystemResize(Qt.RightEdge);
-                    }
                 }
             }
         }
 
+        // 4. Left Edge
         Item {
             anchors.left: parent.left
             anchors.top: headerBar.bottom
             anchors.bottom: pageStrip.top
             width: 12
             z: 10
+
+            HoverHandler {
+                cursorShape: Qt.SizeHorCursor
+                acceptedDevices: PointerDevice.Mouse
+            }
 
             DragHandler {
                 target: null
@@ -269,17 +304,17 @@ Window {
                 }
             }
 
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.SizeHorCursor
-                onPressed: function (mouse) {
-                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.Mouse
+                onActiveChanged: {
+                    if (active)
                         root.startSystemResize(Qt.LeftEdge);
-                    }
                 }
             }
         }
 
+        // 5. Bottom Edge
         Item {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
@@ -288,6 +323,11 @@ Window {
             anchors.rightMargin: 20
             height: 10
             z: 10
+
+            HoverHandler {
+                cursorShape: Qt.SizeVerCursor
+                acceptedDevices: PointerDevice.Mouse
+            }
 
             DragHandler {
                 target: null
@@ -304,13 +344,12 @@ Window {
                 }
             }
 
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.SizeVerCursor
-                onPressed: function (mouse) {
-                    if (mouse.source === Qt.MouseEventNotSynthesized) {
+            DragHandler {
+                target: null
+                acceptedDevices: PointerDevice.Mouse
+                onActiveChanged: {
+                    if (active)
                         root.startSystemResize(Qt.BottomEdge);
-                    }
                 }
             }
         }
