@@ -19,9 +19,11 @@ QPixmap WindowThumbnailProvider::requestPixmap(const QString &id, QSize *size,
     *size = pixmap.size();
   }
 
-  // Resize if requested
   if (requestedSize.isValid() && !pixmap.isNull()) {
     pixmap = pixmap.scaled(requestedSize, Qt::KeepAspectRatio,
+                           Qt::SmoothTransformation);
+  } else if (!pixmap.isNull() && (pixmap.width() > 640 || pixmap.height() > 480)) {
+    pixmap = pixmap.scaled(640, 480, Qt::KeepAspectRatio,
                            Qt::SmoothTransformation);
   }
 
@@ -44,23 +46,14 @@ QPixmap WindowThumbnailProvider::captureWindow(HWND hwnd) {
   HBITMAP hBitmap = CreateCompatibleBitmap(hdcScreen, w, h);
   HGDIOBJ oldBitmap = SelectObject(hdcMem, hBitmap);
 
-  // PrintWindow is generally better than BitBlt for overlapping windows/DWM
-  // PW_RENDERFULLCONTENT (0x00000002) is available on Windows 8.1+
-  // PW_CLIENTONLY (0x00000001)
-
-  bool result = PrintWindow(hwnd, hdcMem, 2); // 2 = PW_RENDERFULLCONTENT
+  // PW_RENDERFULLCONTENT (0x00000002) for Win 8.1+
+  bool result = PrintWindow(hwnd, hdcMem, 2);
   if (!result) {
-    // Fallback to standard PrintWindow
     result = PrintWindow(hwnd, hdcMem, 0);
   }
 
-  // If PrintWindow fails or returns black, sometimes BitBlt is needed (but
-  // BitBlt captures passing windows)
-
   QPixmap pixmap;
   if (result) {
-    // Convert HBITMAP to QPixmap
-    // Qt's fromWinHBITMAP handles this
     pixmap = QPixmap::fromImage(QImage::fromHBITMAP(hBitmap));
   }
 

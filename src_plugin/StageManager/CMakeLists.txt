@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Widgets)
 
 set(STAGEMANAGER_PLUGIN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/plugin/additional/EdgeGesture/StageManager")
 
@@ -18,13 +18,13 @@ qt_add_qml_module(stagemanagerplugin
     NO_GENERATE_PLUGIN_SOURCE
     OUTPUT_DIRECTORY ${STAGEMANAGER_PLUGIN_OUTPUT_DIR}
     SOURCES
-        QmlDwmThumbnail.h QmlDwmThumbnail.cpp
+        StageManagerTypes.h
+        WindowEmbedder.h WindowEmbedder.cpp
+        StageContainerController.h StageContainerController.cpp
+        StageManagerService.h StageManagerService.cpp
         LiveWindowManager.h LiveWindowManager.cpp
         WinIconProvider.h WinIconProvider.cpp
         WindowThumbnailProvider.h WindowThumbnailProvider.cpp
-        SafeWindowReparenter.h SafeWindowReparenter.cpp
-        WindowController.h WindowController.cpp
-        CapsuleManager.h CapsuleManager.cpp
         StageManagerPlugin.cpp
 )
 

@@ -1,6 +1,7 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Test Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Test Concurrent Widgets)
 
 set(NOTES_SRC_DIR "${CMAKE_SOURCE_DIR}/src_plugin/notes")
+set(STAGEMANAGER_SRC_DIR "${CMAKE_SOURCE_DIR}/src_plugin/StageManager")
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
@@ -43,3 +44,33 @@ target_link_libraries(notes_tests PRIVATE
 )
 
 add_test(NAME notes_tests COMMAND notes_tests)
+
+# Stage Manager Tests
+add_executable(stage_manager_tests
+    stagemanager/TestStageManager.cpp
+    ${STAGEMANAGER_SRC_DIR}/WindowEmbedder.cpp
+    ${STAGEMANAGER_SRC_DIR}/StageContainerController.cpp
+    ${STAGEMANAGER_SRC_DIR}/StageManagerService.cpp
+    ${STAGEMANAGER_SRC_DIR}/LiveWindowManager.cpp
+    ${STAGEMANAGER_SRC_DIR}/WinIconProvider.cpp
+    ${STAGEMANAGER_SRC_DIR}/WindowThumbnailProvider.cpp
+)
+
+target_include_directories(stage_manager_tests PRIVATE
+    ${STAGEMANAGER_SRC_DIR}
+)
+
+target_link_libraries(stage_manager_tests PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::Widgets
+    Qt6::Test
+    dwmapi
+    user32
+    gdi32
+    Comctl32
+)
+
+add_test(NAME stage_manager_tests COMMAND stage_manager_tests)

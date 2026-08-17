@@ -2,15 +2,12 @@
 
 #include <QAbstractListModel>
 #include <QVector>
-#include <dwmapi.h>
 #include <windows.h>
-
 #include <qqml.h>
 
 struct WindowInfo {
-  quint64 hwnd;
+  quint64 hwnd{0};
   QString title;
-  // We can add icon path or other metadata here
 };
 
 class LiveWindowManager : public QAbstractListModel {
@@ -32,10 +29,7 @@ public:
   Q_INVOKABLE void refresh();
   Q_INVOKABLE void activateWindow(quint64 hwnd);
 
-  // Static callback for EnumWindows
   static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam);
-
-  // Static callback for SetWinEventHook
   static void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook, DWORD event,
                                     HWND hwnd, LONG idObject, LONG idChild,
                                     DWORD dwEventThread, DWORD dwmsEventTime);
@@ -49,7 +43,4 @@ private:
   QVector<WindowInfo> m_windows;
   DWORD m_myProcessId = 0;
   HWINEVENTHOOK m_hEventHook = nullptr;
-
-  // Helper to queue updates to the main thread
-  void queueRefresh();
 };
